@@ -46,16 +46,21 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .tool-btn svg { width: 18px; height: 18px; display: block; }
 .tool-btn .btn-icon { display: inline-flex; align-items: center; justify-content: center; }
 .tool-btn.tool-pen, .tool-btn.tool-pen2, .tool-btn.tool-eraser { width: 40px; height: 32px; padding: 0; display: grid; place-items: center; }
-.sidebar-footer { margin-top: auto; display: flex; gap: 6px; justify-content: flex-end; align-items: center; flex-wrap: nowrap; }
-.sidebar-footer .action-btn { width: 64px; padding: 6px 6px; font-size: 12px; }
-.action-btn.has-icon { display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
-.action-btn.has-icon svg { width: 12px; height: 12px; display: block; flex: 0 0 auto; }
+.sidebar-footer { margin-top: auto; display: flex; gap: 2px; justify-content: flex-end; align-items: center; flex-wrap: nowrap; }
+.sidebar-footer .action-btn { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; }
+.sidebar-footer .action-btn svg { width: 16px; height: 16px; display: block; }
 .action-btn:disabled { opacity: .6; cursor: not-allowed; }
 .modal-overlay { position: absolute; inset: 0; z-index: 80; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.35); padding: 16px; box-sizing: border-box; }
 .modal-overlay.is-open { display: flex; }
 .modal-card { width: min(420px,100%); border: 1px solid rgba(0,0,0,.12); border-radius: 14px; background: rgba(255,255,255,.98); box-shadow: 0 18px 50px rgba(0,0,0,.22); padding: 12px; box-sizing: border-box; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .modal-body { display: grid; gap: 6px; font-size: 13px; line-height: 1.4; }
+.anim-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.anim-frames { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1px solid rgba(0,0,0,.10); border-radius: 12px; background: rgba(255,255,255,.75); }
+.anim-frame-btn { width: 34px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); background: rgba(255,255,255,.92); cursor: pointer; }
+.anim-frame-btn.is-active { background: rgba(17,17,17,.92); color: #fff; border-color: rgba(17,17,17,.92); }
+.anim-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.anim-row input[type="number"] { width: 96px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); padding: 0 8px; }
 .overlay { position: absolute; inset: 0; background: rgba(245,245,245,.96); display: none; flex-direction: column; padding: 12px; box-sizing: border-box; z-index: 3; }
 .container.color-mode .tool-btn { display: none; }
 .container.color-mode .sidebar { display: none; }
@@ -191,8 +196,10 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
   <div id="paletteTools" class="palette-panel" aria-label="16色调色板笔"></div>
 </div>
 <div class="sidebar-footer" aria-label="底部按钮">
-  <button id="aboutBtn" type="button" class="action-btn has-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>关于</button>
-  <button id="animBtn" type="button" class="action-btn has-icon" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l12 6-12 6Z"/><path d="M3 6v12"/></svg>动画</button>
+  <button id="aboutBtn" type="button" class="action-btn" title="关于" aria-label="关于"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button>
+  <button id="animBtn" type="button" class="action-btn" title="动画" aria-label="动画"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l12 6-12 6Z"/><path d="M3 6v12"/></svg></button>
+  <button id="cropBtn" type="button" class="action-btn" title="裁剪" aria-label="裁剪"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg></button>
+  <button id="selectBtn" type="button" class="action-btn" title="选择" aria-label="选择"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2" stroke-dasharray="4 3"/></svg></button>
 </div>
 </div>
 <div class="jitter-panel">
@@ -309,6 +316,28 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
     <div class="modal-body">
       <div>作者：雪风与梦 (网名)</div>
       <div>参考 wigglypaint（作者:Internet Janitor，John Earnest）</div>
+    </div>
+  </div>
+</div>
+<div id="animModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="动画">
+  <div class="modal-card">
+    <div class="modal-head">
+      <strong>动画</strong>
+      <button id="animClose" type="button" class="action-btn">关闭</button>
+    </div>
+    <div class="anim-bar">
+      <div class="anim-row">
+        <button id="animNewFrame" type="button" class="action-btn">新建帧</button>
+        <button id="animDeleteFrame" type="button" class="action-btn">删除帧</button>
+      </div>
+      <div class="anim-row">
+        <button id="animPlay" type="button" class="action-btn">播放</button>
+      </div>
+    </div>
+    <div id="animFrameList" class="anim-frames" aria-label="帧列表"></div>
+    <div class="anim-row" style="margin-top:10px;">
+      <span class="label">总延时(ms)</span>
+      <input id="animDelay" type="number" min="30" step="10" value="360">
     </div>
   </div>
 </div>
@@ -1379,6 +1408,162 @@ if(aboutModalEl){
 window.addEventListener('keydown',(e)=>{
   if(e.key==='Escape' && aboutModalEl && aboutModalEl.classList.contains('is-open')) closeAbout();
 });
+const animBtnEl=document.getElementById('animBtn');
+const animModalEl=document.getElementById('animModal');
+const animCloseEl=document.getElementById('animClose');
+const animFrameListEl=document.getElementById('animFrameList');
+const animNewFrameEl=document.getElementById('animNewFrame');
+const animDeleteFrameEl=document.getElementById('animDeleteFrame');
+const animDelayEl=document.getElementById('animDelay');
+const animPlayEl=document.getElementById('animPlay');
+let timeline=[{ frames:[frames[0],frames[1],frames[2],frames[3]], delay:360 }];
+let timelineIndex=0;
+let timelinePlaying=false;
+let timelineToken=0;
+function applyTimelineFrame(i){
+  const t=timeline[i];
+  if(!t) return;
+  for(let fi=0;fi<4;fi++){
+    frames[fi]=t.frames[fi];
+  }
+}
+function setTimelineIndex(i){
+  const next=Math.max(0,Math.min(timeline.length-1,i|0));
+  timelineIndex=next;
+  applyTimelineFrame(timelineIndex);
+  if(jitterOnEl && jitterOnEl.checked && !timelinePlaying){
+    applyPlaybackMode();
+  }else{
+    stopAnim();
+    displayFrame=3;
+    renderCurrent();
+  }
+  syncAnimUI();
+}
+function cloneTimelineFrame(src){
+  return { frames: src.frames.map(f=>new Uint8Array(f)), delay: src.delay|0 };
+}
+function rebuildAnimFrameList(){
+  if(!animFrameListEl) return;
+  animFrameListEl.innerHTML='';
+  for(let i=0;i<timeline.length;i++){
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='anim-frame-btn'+(i===timelineIndex?' is-active':'');
+    btn.textContent=String(i+1);
+    btn.addEventListener('click',()=>{
+      if(timelinePlaying) return;
+      setTimelineIndex(i);
+    });
+    animFrameListEl.appendChild(btn);
+  }
+}
+function syncAnimUI(){
+  rebuildAnimFrameList();
+  const cur=timeline[timelineIndex];
+  if(animDelayEl && cur) animDelayEl.value=String(cur.delay|0);
+  const disable=timelinePlaying;
+  if(animNewFrameEl) animNewFrameEl.disabled=disable;
+  if(animDeleteFrameEl) animDeleteFrameEl.disabled=disable || timeline.length<=1;
+  if(animDelayEl) animDelayEl.disabled=disable;
+  if(animPlayEl) animPlayEl.textContent=timelinePlaying?'停止':'播放';
+}
+function openAnim(){
+  if(!animModalEl) return;
+  stopAnim();
+  displayFrame=3;
+  renderCurrent();
+  animModalEl.classList.add('is-open');
+  syncAnimUI();
+}
+function closeAnim(){
+  if(!animModalEl) return;
+  stopTimelinePlayback();
+  animModalEl.classList.remove('is-open');
+  applyPlaybackMode();
+}
+function stopTimelinePlayback(){
+  timelinePlaying=false;
+  timelineToken++;
+  syncAnimUI();
+}
+function startTimelinePlayback(){
+  if(timelinePlaying) return;
+  stopAnim();
+  timelinePlaying=true;
+  const token=++timelineToken;
+  syncAnimUI();
+  const step=()=>{
+    if(!timelinePlaying || token!==timelineToken) return;
+    const cel=timeline[timelineIndex];
+    if(!cel){ stopTimelinePlayback(); return; }
+    const total=Math.max(30,cel.delay|0);
+    const d1=Math.max(20,Math.floor(total/3));
+    const d2=Math.max(20,Math.floor(total/3));
+    const d3=Math.max(20,total-d1-d2);
+    const delays=[d1,d2,d3];
+    let sub=0;
+    const stepSub=()=>{
+      if(!timelinePlaying || token!==timelineToken) return;
+      displayFrame=sub;
+      renderCurrent();
+      const wait=delays[sub] ?? 120;
+      sub++;
+      if(sub<3){
+        window.setTimeout(stepSub,wait);
+      }else{
+        timelineIndex=(timelineIndex+1)%timeline.length;
+        applyTimelineFrame(timelineIndex);
+        syncAnimUI();
+        window.setTimeout(()=>{ sub=0; stepSub(); },0);
+      }
+    };
+    stepSub();
+  };
+  step();
+}
+if(animBtnEl) animBtnEl.addEventListener('click',openAnim);
+if(animCloseEl) animCloseEl.addEventListener('click',closeAnim);
+if(animModalEl){
+  animModalEl.addEventListener('mousedown',(e)=>{
+    if(e.target===animModalEl) closeAnim();
+  });
+}
+window.addEventListener('keydown',(e)=>{
+  if(e.key==='Escape' && animModalEl && animModalEl.classList.contains('is-open')) closeAnim();
+});
+if(animNewFrameEl){
+  animNewFrameEl.addEventListener('click',()=>{
+    if(timelinePlaying) return;
+    const cur=timeline[timelineIndex];
+    const next=cur ? cloneTimelineFrame(cur) : { frames:[new Uint8Array(W*H),new Uint8Array(W*H),new Uint8Array(W*H),new Uint8Array(W*H)], delay:360 };
+    timeline.splice(timelineIndex+1,0,next);
+    setTimelineIndex(timelineIndex+1);
+  });
+}
+if(animDeleteFrameEl){
+  animDeleteFrameEl.addEventListener('click',()=>{
+    if(timelinePlaying) return;
+    if(timeline.length<=1) return;
+    timeline.splice(timelineIndex,1);
+    setTimelineIndex(Math.min(timelineIndex,timeline.length-1));
+  });
+}
+if(animDelayEl){
+  animDelayEl.addEventListener('change',()=>{
+    const cur=timeline[timelineIndex];
+    if(!cur) return;
+    const v=Math.max(30,Number(animDelayEl.value)||0);
+    cur.delay=v;
+    syncAnimUI();
+  });
+}
+if(animPlayEl){
+  animPlayEl.addEventListener('click',()=>{
+    if(timelinePlaying) stopTimelinePlayback();
+    else startTimelinePlayback();
+  });
+}
 function resampleMaskOR(src,sw,sh,ow,oh){
   const out=new Uint8Array(ow*oh);
   for(let y=0;y<oh;y++){
