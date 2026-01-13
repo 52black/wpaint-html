@@ -8,7 +8,7 @@
 html,body { height: 100%; }
 body { margin: 0; background: #000; display: grid; place-items: center; }
 .container { width: 512px; height: 342px; position: relative; background: #fff; overflow: hidden; }
-.canvas { position: absolute; top: 0; left: 0; width: 360px; height: 265px; border: 1px solid #ccc; background: transparent; z-index: 2; }
+.canvas { position: absolute; top: 0; left: 0; width: 360px; height: 265px; border: 1px solid #ccc; background: transparent; z-index: 2; touch-action: none; }
 .tool-btn { position: absolute; z-index: 2; padding: 6px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 10px; background: rgba(255,255,255,.92); color: #111; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); backdrop-filter: blur(6px); }
 .tool-btn:hover { background: rgba(255,255,255,.98); }
 .tool-btn:active { transform: translateY(1px); }
@@ -17,10 +17,12 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .tool-pen { top: 8px; right: 8px; }
 .tool-pen2 { top: 46px; right: 8px; }
 .tool-clear { top: 84px; right: 8px; }
-.tool-export { top: 122px; right: 8px; }
-.tool-importgif { top: 160px; right: 8px; }
-.tool-importbg { top: 198px; right: 8px; }
-.tool-advanced { top: 236px; right: 8px; }
+.tool-undo { top: 122px; right: 8px; }
+.tool-redo { top: 160px; right: 8px; }
+.tool-export { top: 198px; right: 8px; }
+.tool-importgif { top: 236px; right: 8px; }
+.tool-importbg { top: 274px; right: 8px; }
+.tool-advanced { top: 312px; right: 8px; }
 .tool-eraser { bottom: 8px; right: 8px; }
 .tool-color { bottom: 8px; left: 8px; }
 .tool-btn svg { width: 18px; height: 18px; display: block; }
@@ -90,6 +92,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .color-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
 .color-header strong { font-size: 14px; }
 .color-actions { display: flex; align-items: center; gap: 10px; }
+.color-actions select { height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.9); padding: 0 8px; }
 .outline-colors { display: none; gap: 8px; align-items: center; margin-bottom: 10px; }
 .outline-colors .mini { width: 56px; height: 44px; border-radius: 12px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.9); padding: 6px; box-sizing: border-box; display: grid; grid-template-rows: 16px 1fr; align-items: center; gap: 4px; }
 .outline-colors .mini input[type="color"] { width: 100%; height: 22px; border: 0; padding: 0; background: transparent; }
@@ -104,6 +107,8 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 <button id="pen" class="tool-btn tool-pen" title="铅笔" aria-label="铅笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span></button>
 <button id="pen2" class="tool-btn tool-pen2" title="钢笔" aria-label="钢笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span></button>
 <button id="clear" class="tool-btn tool-clear">清空</button>
+<button id="undo" class="tool-btn tool-undo">撤销</button>
+<button id="redo" class="tool-btn tool-redo">重做</button>
 <button id="exportGif" class="tool-btn tool-export">导出GIF</button>
 <button id="importGif" class="tool-btn tool-importgif">导入GIF</button>
 <button id="importBg" class="tool-btn tool-importbg">导入背景</button>
@@ -157,6 +162,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
   <div class="color-header">
     <span></span>
     <div class="color-actions">
+      <select id="schemeSelect" aria-label="配色方案"></select>
       <label class="toggle"><input type="checkbox" id="toggleTransparent"><span>透明背景</span></label>
       <label class="toggle"><input id="separateOutline" type="checkbox"><span>区分勾线笔颜色</span></label>
       <button id="back" class="action-btn">返回绘制</button>
@@ -243,6 +249,8 @@ const penBtn=document.getElementById('pen');
 const pen2Btn=document.getElementById('pen2');
 const eraserBtn=document.getElementById('eraser');
 const clearBtn=document.getElementById('clear');
+const undoBtn=document.getElementById('undo');
+const redoBtn=document.getElementById('redo');
 const exportGifBtn=document.getElementById('exportGif');
 const importGifBtn=document.getElementById('importGif');
 const importBgBtn=document.getElementById('importBg');
@@ -277,6 +285,60 @@ const toolSettings={
 };
 const sizeEl=document.getElementById('size');
 const sizeValueEl=document.getElementById('sizeValue');
+const undoStack=[];
+const redoStack=[];
+const MAX_HISTORY=80;
+function cloneFrames(){
+  return frames.map(f=>new Uint8Array(f));
+}
+function applyFrames(snapshot){
+  for(let i=0;i<frames.length;i++){
+    frames[i].set(snapshot[i]);
+  }
+}
+function syncHistoryUI(){
+  undoBtn.disabled=undoStack.length===0;
+  redoBtn.disabled=redoStack.length===0;
+}
+function pushHistory(){
+  undoStack.push(cloneFrames());
+  if(undoStack.length>MAX_HISTORY) undoStack.shift();
+  redoStack.length=0;
+  syncHistoryUI();
+}
+function undo(){
+  if(undoStack.length===0) return;
+  redoStack.push(cloneFrames());
+  const prev=undoStack.pop();
+  applyFrames(prev);
+  syncHistoryUI();
+  renderCurrent();
+}
+function redo(){
+  if(redoStack.length===0) return;
+  undoStack.push(cloneFrames());
+  const next=redoStack.pop();
+  applyFrames(next);
+  syncHistoryUI();
+  renderCurrent();
+}
+undoBtn.addEventListener('click',undo);
+redoBtn.addEventListener('click',redo);
+window.addEventListener('keydown',e=>{
+  if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA')) return;
+  const isMac=navigator.platform.toLowerCase().includes('mac');
+  const ctrl=isMac ? e.metaKey : e.ctrlKey;
+  if(!ctrl) return;
+  const key=(e.key||'').toLowerCase();
+  if(key==='z'){
+    e.preventDefault();
+    if(e.shiftKey) redo();
+    else undo();
+  }else if(key==='y'){
+    e.preventDefault();
+    redo();
+  }
+});
 function setTool(tool){
   // 切换当前工具，并同步 UI（激活态/粗细/抖动可用性）
   currentTool=tool;
@@ -478,15 +540,24 @@ function drawSegment(from,to,val){
   }
   drawLineValue(frames[3],from,to,val,size);
 }
-canvas.addEventListener('mousedown',e=>{
+function pointerCanDraw(e){
+  if(e.button!=null && e.button!==0) return false;
+  return true;
+}
+canvas.addEventListener('pointerdown',e=>{
+  if(!pointerCanDraw(e)) return;
+  e.preventDefault();
+  canvas.setPointerCapture(e.pointerId);
   drawing=true;
+  pushHistory();
   last=getPos(e);
   const val=getPaintValue();
   drawSegment(last,last,val);
   renderCurrent();
 });
-canvas.addEventListener('mousemove',e=>{
+canvas.addEventListener('pointermove',e=>{
   if(!drawing) return;
+  e.preventDefault();
   const p=getPos(e);
   const val=getPaintValue();
   if(currentTool==='palette'){
@@ -497,14 +568,23 @@ canvas.addEventListener('mousemove',e=>{
   last=p;
   renderCurrent();
 });
-window.addEventListener('mouseup',()=>{ drawing=false; });
-canvas.addEventListener('mouseleave',()=>{ drawing=false; });
+function stopDrawing(e){
+  if(!drawing) return;
+  drawing=false;
+  try{
+    if(e && e.pointerId!=null) canvas.releasePointerCapture(e.pointerId);
+  }catch{}
+}
+canvas.addEventListener('pointerup',stopDrawing);
+canvas.addEventListener('pointercancel',stopDrawing);
+canvas.addEventListener('pointerleave',stopDrawing);
 penBtn.addEventListener('click',()=>{ setTool('pencil'); });
 pen2Btn.addEventListener('click',()=>{ setTool('pen'); });
 eraserBtn.addEventListener('click',()=>{ setTool('eraser'); });
 
 function clearCanvas(){
   // 清空：所有帧像素值置 0（透明）
+  pushHistory();
   for(const f of frames) f.fill(0);
   renderCurrent();
 }
@@ -587,6 +667,43 @@ document.querySelectorAll('#colorPage input[type=color]').forEach(input=>{
     renderCurrent();
   });
 });
+const schemeSelectEl=document.getElementById('schemeSelect');
+const paletteSchemes=[
+  { id:'pico8', name:'PICO-8', colors:['#000000','#1d2b53','#7e2553','#008751','#ab5236','#5f574f','#c2c3c7','#fff1e8','#ff004d','#ffa300','#ffec27','#00e436','#29adff','#83769c','#ff77a8','#ffccaa'] },
+  { id:'sweetie16', name:'Sweetie 16', colors:['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179','#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'] },
+  { id:'endesga16', name:'Endesga 16', colors:['#e4a672','#b86f50','#743f39','#3f2832','#9e2835','#e53b44','#fb922b','#ffe762','#63c64d','#327345','#193d3f','#4f6781','#afbfd2','#ffffff','#2ce8f4','#0484d1'] },
+  { id:'db16', name:'DawnBringer 16', colors:['#140c1c','#442434','#30346d','#4e4a4e','#854c30','#346524','#d04648','#757161','#597dce','#d27d2c','#8595a1','#6daa2c','#d2aa99','#6dc2ca','#dad45e','#deeed6'] },
+  { id:'enos16', name:'ENOS16', colors:['#fafafa','#d4d4d4','#9d9d9d','#4b4b4b','#f9d381','#eaaf4d','#f9938a','#e75952','#9ad1f9','#58aeee','#8deda7','#44c55b','#c3a7e1','#9569c8','#bab5aa','#948e82'] },
+];
+function applyPaletteScheme(colors){
+  for(let i=1;i<=BASE_COLOR_COUNT;i++){
+    colorMap[i]=colors[i-1];
+    const input=document.querySelector(`#colorPage input[type=color][data-index="${i}"]`);
+    if(input) input.value=colorMap[i];
+  }
+  applyBackground();
+  syncPaletteButtonsColors();
+  renderCurrent();
+}
+if(schemeSelectEl){
+  const keepOpt=document.createElement('option');
+  keepOpt.value='';
+  keepOpt.textContent='配色方案';
+  schemeSelectEl.appendChild(keepOpt);
+  for(const s of paletteSchemes){
+    const opt=document.createElement('option');
+    opt.value=s.id;
+    opt.textContent=s.name;
+    schemeSelectEl.appendChild(opt);
+  }
+  schemeSelectEl.value='';
+  schemeSelectEl.addEventListener('change',()=>{
+    const id=String(schemeSelectEl.value||'');
+    const scheme=paletteSchemes.find(s=>s.id===id);
+    if(!scheme) return;
+    applyPaletteScheme(scheme.colors);
+  });
+}
 const checkerboard=document.getElementById('checkerboard');
 const toggleTransparent=document.getElementById('toggleTransparent');
 const jitterOnEl=document.getElementById('jitterOn');
@@ -920,6 +1037,7 @@ toggleTransparent.addEventListener('change',()=>{
 applyBackground();
 syncOutlineColorsUI();
 syncPaletteButtonsColors();
+syncHistoryUI();
 rebuildPatternList();
 renderPending();
 if(jitterOnEl.checked){
