@@ -7,8 +7,12 @@
 <style>
 html,body { height: 100%; }
 body { margin: 0; background: #000; display: grid; place-items: center; }
+.stage, .container, .canvas, .sidebar, .tool-btn, .palette-panel, .pattern-picker { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.tool-btn, .canvas { -webkit-tap-highlight-color: transparent; }
+.stage { position: relative; }
+.stage .container { transform-origin: top left; }
 .container { width: 512px; height: 342px; position: relative; background: #fff; overflow: hidden; }
-.canvas { position: absolute; top: 0; left: 0; width: 360px; height: 265px; border: 1px solid #ccc; background: transparent; z-index: 2; touch-action: none; }
+.canvas { position: absolute; top: 0; left: 0; width: 360px; height: 342px; border: 1px solid #ccc; background: transparent; z-index: 2; touch-action: none; }
 .tool-btn { position: absolute; z-index: 2; padding: 6px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 10px; background: rgba(255,255,255,.92); color: #111; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); backdrop-filter: blur(6px); }
 .tool-btn:hover { background: rgba(255,255,255,.98); }
 .tool-btn:active { transform: translateY(1px); }
@@ -42,6 +46,16 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .tool-btn svg { width: 18px; height: 18px; display: block; }
 .tool-btn .btn-icon { display: inline-flex; align-items: center; justify-content: center; }
 .tool-btn.tool-pen, .tool-btn.tool-pen2, .tool-btn.tool-eraser { width: 40px; height: 32px; padding: 0; display: grid; place-items: center; }
+.sidebar-footer { margin-top: auto; display: flex; gap: 6px; justify-content: flex-end; align-items: center; flex-wrap: nowrap; }
+.sidebar-footer .action-btn { width: 64px; padding: 6px 6px; font-size: 12px; }
+.action-btn.has-icon { display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.action-btn.has-icon svg { width: 12px; height: 12px; display: block; flex: 0 0 auto; }
+.action-btn:disabled { opacity: .6; cursor: not-allowed; }
+.modal-overlay { position: absolute; inset: 0; z-index: 80; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.35); padding: 16px; box-sizing: border-box; }
+.modal-overlay.is-open { display: flex; }
+.modal-card { width: min(420px,100%); border: 1px solid rgba(0,0,0,.12); border-radius: 14px; background: rgba(255,255,255,.98); box-shadow: 0 18px 50px rgba(0,0,0,.22); padding: 12px; box-sizing: border-box; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.modal-body { display: grid; gap: 6px; font-size: 13px; line-height: 1.4; }
 .overlay { position: absolute; inset: 0; background: rgba(245,245,245,.96); display: none; flex-direction: column; padding: 12px; box-sizing: border-box; z-index: 3; }
 .container.color-mode .tool-btn { display: none; }
 .container.color-mode .sidebar { display: none; }
@@ -68,7 +82,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .action-btn { padding: 6px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 10px; background: rgba(255,255,255,.92); color: #111; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 .action-btn:hover { background: rgba(255,255,255,.98); }
 .action-btn:active { transform: translateY(1px); }
-.checkerboard { position: absolute; top: 0; left: 0; width: 360px; height: 265px; z-index: 1; display: none;
+.checkerboard { position: absolute; top: 0; left: 0; width: 360px; height: 342px; z-index: 1; display: none;
   background-size: 16px 16px;
   background-position: 0 0, 8px 8px;
 }
@@ -102,6 +116,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .color-side { display: grid; gap: 10px; }
 .card { border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.88); padding: 10px; }
 .color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.color-grid-head { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 8px; }
 .color-cell { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid rgba(0,0,0,.10); border-radius: 12px; background: rgba(255,255,255,.75); }
 .color-cell input[type="color"] { width: 100%; height: 28px; border: 0; padding: 0; background: transparent; }
 .role { font-size: 10px; opacity: .7; }
@@ -119,17 +134,23 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 </style>
 </head>
 <body>
+<div id="stage" class="stage">
 <div class="container">
 <div class="sidebar" aria-label="右侧栏">
 <div class="toolbar-right" aria-label="工具栏">
   <div class="toolbar-row" aria-label="画笔">
     <button id="pen" class="tool-btn tool-pen" title="铅笔" aria-label="铅笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span></button>
     <button id="pen2" class="tool-btn tool-pen2" title="钢笔" aria-label="钢笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span></button>
+    <button id="blobby" class="tool-btn tool-icon" title="Blobby" aria-label="Blobby"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c-4.5 0-8-3.2-8-7.6C4 8.8 7.5 6 10.6 6c.8-2 2.3-3 4-3 2.1 0 3.8 1.5 4.2 3.8C20.9 7.7 22 9.5 22 12c0 5-4 9-10 9Z"/></svg></span></button>
+  </div>
+  <div class="toolbar-row" aria-label="画笔（第二行）">
+    <button id="stippleTiny" class="tool-btn tool-icon" title="StippleTiny" aria-label="StippleTiny"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="7" cy="7" r="1.2"/><circle cx="12" cy="6" r="1"/><circle cx="17" cy="7.5" r="1.1"/><circle cx="6" cy="12" r="1"/><circle cx="11" cy="12" r="1.3"/><circle cx="16.5" cy="12.5" r="1"/><circle cx="7.5" cy="17" r="1.1"/><circle cx="12.5" cy="18" r="1"/><circle cx="18" cy="17" r="1.2"/></svg></span></button>
+    <button id="softLrg" class="tool-btn tool-icon" title="SoftLrg" aria-label="SoftLrg"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M21 12h-3"/><path d="M12 21v-3"/><path d="M3 12h3"/><path d="M18.4 5.6l-2.1 2.1"/><path d="M7.7 16.3l-2.1 2.1"/><path d="M5.6 5.6l2.1 2.1"/><path d="M16.3 16.3l2.1 2.1"/></svg></span></button>
     <button id="eraser" class="tool-btn tool-eraser" title="橡皮擦" aria-label="橡皮擦"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19H4a2 2 0 0 1-2-2v-1l11.5-12.5Z"/></svg></span></button>
   </div>
   <div class="toolbar-row" aria-label="历史">
-    <button id="undo" class="tool-btn tool-undo tool-icon" title="撤销" aria-label="撤销"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9H3"/></svg></span></button>
-    <button id="redo" class="tool-btn tool-redo tool-icon" title="重做" aria-label="重做"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9h9"/></svg></span></button>
+    <button id="undo" class="tool-btn tool-undo tool-icon" title="撤销" aria-label="撤销"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v6h6" transform="rotate(45 6 10)"/><path d="M21 17a9 9 0 0 0-9-9H3"/></svg></span></button>
+    <button id="redo" class="tool-btn tool-redo tool-icon" title="重做" aria-label="重做"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4v6h-6" transform="rotate(-45 20 6)"></path><path d="M3 17a9 9 0 0 1 9-9h9"/></svg></span></button>
     <button id="clear" class="tool-btn tool-clear tool-icon" title="清空" aria-label="清空"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 16H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></span></button>
   </div>
   <div class="toolbar-row" aria-label="操作">
@@ -169,14 +190,31 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
   </div>
   <div id="paletteTools" class="palette-panel" aria-label="16色调色板笔"></div>
 </div>
+<div class="sidebar-footer" aria-label="底部按钮">
+  <button id="aboutBtn" type="button" class="action-btn has-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>关于</button>
+  <button id="animBtn" type="button" class="action-btn has-icon" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l12 6-12 6Z"/><path d="M3 6v12"/></svg>动画</button>
+</div>
 </div>
 <div class="jitter-panel">
-  <div class="row">
-    <label class="toggle"><input id="jitterOn" type="checkbox" checked><span>抖动</span></label>
-    <div class="range">
-      <input id="jitter" type="range" min="0" max="10" step="1" value="1">
-      <span id="jitterValue" class="pill">1</span>
+  <div id="jitterControls">
+    <div class="row">
+      <label class="toggle"><input id="jitterOn" type="checkbox" checked><span>抖动</span></label>
+      <div class="range">
+        <input id="jitter" type="range" min="0" max="10" step="1" value="1">
+        <span id="jitterValue" class="pill">1</span>
+      </div>
     </div>
+  </div>
+  <div id="eraserControls" style="display:none">
+    <div class="row">
+      <label class="toggle"><input id="eraseOnlyOutline" type="checkbox"><span>只擦勾线</span></label>
+    </div>
+    <div class="row">
+      <label class="toggle"><input id="eraseOnlyEraser" type="checkbox"><span>不擦勾线</span></label>
+    </div>
+  </div>
+  <div class="row">
+    <label class="toggle"><input id="protectOutline" type="checkbox" checked><span>勾线笔不允许被覆盖</span></label>
   </div>
   <div class="row">
     <span class="label">粗细</span>
@@ -190,7 +228,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 <input id="gifFile" type="file" accept="image/gif" style="display:none">
 <input id="bgFile" type="file" accept="image/*" style="display:none">
 <div id="checkerboard" class="checkerboard"></div>
-<canvas id="drawing" class="canvas" width="360" height="265"></canvas>
+<canvas id="drawing" class="canvas" width="360" height="342"></canvas>
 <div id="colorPage" class="overlay">
   <div class="color-header">
     <span></span>
@@ -202,13 +240,25 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
     </div>
   </div>
   <div id="outlineColors" class="outline-colors">
-    <div class="mini" title="铅笔">
+    <div class="mini" title="勾线笔 1">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       <input type="color" data-index="17">
     </div>
-    <div class="mini" title="钢笔">
+    <div class="mini" title="勾线笔 2">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
       <input type="color" data-index="18">
+    </div>
+    <div class="mini" title="勾线笔 3">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c-4.5 0-8-3.2-8-7.6C4 8.8 7.5 6 10.6 6c.8-2 2.3-3 4-3 2.1 0 3.8 1.5 4.2 3.8C20.9 7.7 22 9.5 22 12c0 5-4 9-10 9Z"/></svg>
+      <input type="color" data-index="19">
+    </div>
+    <div class="mini" title="勾线笔 4">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="7" cy="7" r="1.2"/><circle cx="12" cy="6" r="1"/><circle cx="17" cy="7.5" r="1.1"/><circle cx="6" cy="12" r="1"/><circle cx="11" cy="12" r="1.3"/><circle cx="16.5" cy="12.5" r="1"/><circle cx="7.5" cy="17" r="1.1"/><circle cx="12.5" cy="18" r="1"/><circle cx="18" cy="17" r="1.2"/></svg>
+      <input type="color" data-index="20">
+    </div>
+    <div class="mini" title="勾线笔 5">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M21 12h-3"/><path d="M12 21v-3"/><path d="M3 12h3"/><path d="M18.4 5.6l-2.1 2.1"/><path d="M7.7 16.3l-2.1 2.1"/><path d="M5.6 5.6l2.1 2.1"/><path d="M16.3 16.3l2.1 2.1"/></svg>
+      <input type="color" data-index="21">
     </div>
   </div>
   <div class="color-layout">
@@ -225,6 +275,10 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
       </div>
     </div>
     <div class="card">
+      <div class="color-grid-head">
+        <button id="schemeReset" type="button" class="action-btn">重置</button>
+        <button id="schemeSave" type="button" class="action-btn">保存</button>
+      </div>
       <div class="color-grid">
         <div class="color-cell"><span class="role">背景色</span><input type="color" data-index="1"></div>
         <div class="color-cell"><span class="role">前景色</span><input type="color" data-index="2"></div>
@@ -244,12 +298,44 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
         <div class="color-cell"><input type="color" data-index="16"></div>
       </div>
     </div>
+</div>
+</div>
+<div id="aboutModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="关于">
+  <div class="modal-card">
+    <div class="modal-head">
+      <strong>关于</strong>
+      <button id="aboutClose" type="button" class="action-btn">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div>作者：雪风与梦 (网名)</div>
+      <div>参考 wigglypaint（作者:Internet Janitor，John Earnest）</div>
+    </div>
   </div>
+</div>
 </div>
 </div>
 <script type="module">
 import { GIFEncoder } from 'https://unpkg.com/gifenc@1.0.3';
 import { parseGIF, decompressFrames } from 'https://esm.sh/gifuct-js@2.1.2';
+const stageEl=document.getElementById('stage');
+const containerEl=document.querySelector('.container');
+function applyStageScale(){
+  const vw=window.innerWidth||0;
+  const vh=window.innerHeight||0;
+  const pad=16;
+  const s=Math.min(1,(vw-pad)/512,(vh-pad)/342);
+  const scale=(Number.isFinite(s)&&s>0)?s:1;
+  if(stageEl){
+    stageEl.style.width=`${Math.round(512*scale)}px`;
+    stageEl.style.height=`${Math.round(342*scale)}px`;
+  }
+  if(containerEl){
+    containerEl.style.transform=`scale(${scale})`;
+  }
+}
+applyStageScale();
+window.addEventListener('resize',applyStageScale);
+window.addEventListener('orientationchange',applyStageScale);
 // ===== 画布/数据模型 =====
 // 为了实现“沸腾抖动”的播放效果，这里用 4 帧像素数据来表示同一张画：
 // - 帧 0/1/2：抖动模式下循环播放（会对每段新线条端点做随机偏移）
@@ -259,8 +345,10 @@ import { parseGIF, decompressFrames } from 'https://esm.sh/gifuct-js@2.1.2';
 const canvas=document.getElementById('drawing');
 const ctx=canvas.getContext('2d');
 const W=canvas.width,H=canvas.height;
-const MAX_COLOR_INDEX=18;
+const MAX_COLOR_INDEX=21;
 const BASE_COLOR_COUNT=16;
+const OUTLINE_FIRST=17;
+const OUTLINE_LAST=21;
 const frames=[
   new Uint8Array(W*H),
   new Uint8Array(W*H),
@@ -269,7 +357,7 @@ const frames=[
 ];
 // 颜色映射：值 0~16 -> 颜色
 // 约定：值 1 为背景色，值 2 为前景色（第一只笔）
-const defaultColors=['#000000','#ffffff','#000000','#00ff00','#0000ff','#ffff00','#ff00ff','#00ffff','#888888','#444444','#ffa500','#800080','#008000','#000080','#808000','#800000','#ff0000','#000000','#000000'];
+const defaultColors=['#000000','#ffffff','#000000','#00ff00','#0000ff','#ffff00','#ff00ff','#00ffff','#888888','#444444','#ffa500','#800080','#008000','#000080','#808000','#800000','#ff0000','#000000','#000000','#000000','#000000','#000000'];
 const colorMap=defaultColors.slice();
 let currentTool='pencil';
 let paletteValue=2;
@@ -280,6 +368,9 @@ let drawing=false;
 let last=null;
 const penBtn=document.getElementById('pen');
 const pen2Btn=document.getElementById('pen2');
+const blobbyBtn=document.getElementById('blobby');
+const stippleTinyBtn=document.getElementById('stippleTiny');
+const softLrgBtn=document.getElementById('softLrg');
 const eraserBtn=document.getElementById('eraser');
 const clearBtn=document.getElementById('clear');
 const undoBtn=document.getElementById('undo');
@@ -289,6 +380,7 @@ const importGifBtn=document.getElementById('importGif');
 const importBgBtn=document.getElementById('importBg');
 const advancedBtn=document.getElementById('advanced');
 const separateOutlineEl=document.getElementById('separateOutline');
+const protectOutlineEl=document.getElementById('protectOutline');
 const outlineColorsEl=document.getElementById('outlineColors');
 const paletteToolsEl=document.getElementById('paletteTools');
 const patternPickerEl=document.querySelector('.pattern-picker');
@@ -310,11 +402,25 @@ const patternFileEl=document.getElementById('patternFile');
 const gifFileEl=document.getElementById('gifFile');
 const bgFileEl=document.getElementById('bgFile');
 let customBgUrl='';
+const outlineColorStore=Array.from({length: MAX_COLOR_INDEX+1},()=>null);
+for(let i=OUTLINE_FIRST;i<=OUTLINE_LAST;i++){
+  outlineColorStore[i]=colorMap[i] ?? colorMap[2];
+}
+function syncOutlineColorMap(){
+  const separate=Boolean(separateOutlineEl && separateOutlineEl.checked);
+  for(let i=OUTLINE_FIRST;i<=OUTLINE_LAST;i++){
+    colorMap[i]=separate ? (outlineColorStore[i] ?? colorMap[2]) : colorMap[2];
+  }
+}
+syncOutlineColorMap();
 const toolSettings={
   eraser:{ size:11 },
   pencil:{ size:1 },
   pen:{ size:3 },
-  palette:{ size:3 },
+  palette:{ size:5 },
+  blobby:{ size:9 },
+  stippleTiny:{ size:5 },
+  softLrg:{ size:15 },
 };
 const sizeEl=document.getElementById('size');
 const sizeValueEl=document.getElementById('sizeValue');
@@ -377,18 +483,28 @@ function setTool(tool){
   currentTool=tool;
   penBtn.classList.toggle('is-active',tool==='pencil');
   pen2Btn.classList.toggle('is-active',tool==='pen');
+  blobbyBtn.classList.toggle('is-active',tool==='blobby');
+  stippleTinyBtn.classList.toggle('is-active',tool==='stippleTiny');
+  softLrgBtn.classList.toggle('is-active',tool==='softLrg');
   eraserBtn.classList.toggle('is-active',tool==='eraser');
   sizeEl.value=String(toolSettings[tool]?.size ?? 1);
   sizeValueEl.textContent=String(toolSettings[tool]?.size ?? 1);
   const erasing=tool==='eraser';
   jitter.disabled=erasing;
   jitterValue.style.opacity=erasing?'.5':'1';
+  if(jitterControlsEl && eraserControlsEl){
+    jitterControlsEl.style.display=erasing?'none':'block';
+    eraserControlsEl.style.display=erasing?'block':'none';
+  }
   syncPaletteButtonsActive();
 }
 function getPaintValue(){
   if(currentTool==='eraser') return 0;
-  if(currentTool==='pencil') return separateOutlineEl.checked ? 17 : 2;
-  if(currentTool==='pen') return separateOutlineEl.checked ? 18 : 2;
+  if(currentTool==='pencil') return 17;
+  if(currentTool==='pen') return 18;
+  if(currentTool==='blobby') return 19;
+  if(currentTool==='stippleTiny') return 20;
+  if(currentTool==='softLrg') return 21;
   return paletteValue;
 }
 function getPos(e){
@@ -401,7 +517,21 @@ function getPos(e){
 function setPixel(frame,x,y,val){
   if(x<0||y<0||x>=W||y>=H) return;
   const v=val|0;
-  frame[y*W+x]=(v<0?0:(v>MAX_COLOR_INDEX?MAX_COLOR_INDEX:v));
+  const idx=y*W+x;
+  const next=(v<0?0:(v>MAX_COLOR_INDEX?MAX_COLOR_INDEX:v));
+  if(next===0 && currentTool==='eraser'){
+    const cur=frame[idx];
+    const isOutline=(cur>=OUTLINE_FIRST && cur<=OUTLINE_LAST);
+    if(eraseOnlyOutlineEl && eraseOnlyOutlineEl.checked && !isOutline) return;
+    if(eraseOnlyEraserEl && eraseOnlyEraserEl.checked && isOutline) return;
+  }
+  if(protectOutlineEl && protectOutlineEl.checked){
+    const cur=frame[idx];
+    const curIsOutline=(cur>=OUTLINE_FIRST && cur<=OUTLINE_LAST);
+    const nextIsOutline=(next>=OUTLINE_FIRST && next<=OUTLINE_LAST);
+    if(curIsOutline && !nextIsOutline && next!==0) return;
+  }
+  frame[idx]=next;
 }
 function stamp(frame,x,y,val,size){
   // 把“粗细”转换成一个圆形像素章，盖到当前帧上
@@ -452,6 +582,88 @@ function stampPalette(frame,x,y,val,size){
   if(brush){ stampPattern(frame,x,y,val,size,brush); return; }
   stamp(frame,x,y,val,size);
 }
+function clampBrushSize(n){
+  const v=n|0;
+  if(v<1) return 1;
+  if(v>31) return 31;
+  return v;
+}
+const STIPPLE_TINY_BRUSHES=[
+  { w:4, h:4, mask:new Uint8Array([1,0,0,0, 0,0,1,0, 0,1,0,0, 0,0,0,1]) },
+  { w:4, h:4, mask:new Uint8Array([0,1,0,0, 0,0,0,1, 1,0,0,0, 0,0,1,0]) },
+  { w:4, h:4, mask:new Uint8Array([0,0,1,0, 1,0,0,0, 0,0,0,1, 0,1,0,0]) },
+  { w:4, h:4, mask:new Uint8Array([0,0,0,1, 0,1,0,0, 0,0,1,0, 1,0,0,0]) },
+  { w:4, h:4, mask:new Uint8Array([1,0,1,0, 0,0,0,0, 0,1,0,1, 0,0,0,0]) },
+  { w:4, h:4, mask:new Uint8Array([0,0,0,0, 1,0,0,1, 0,0,0,0, 1,0,0,1]) },
+  { w:4, h:4, mask:new Uint8Array([0,1,0,1, 0,0,0,0, 1,0,1,0, 0,0,0,0]) },
+  { w:4, h:4, mask:new Uint8Array([0,0,1,0, 0,0,0,0, 1,0,0,1, 0,0,0,0]) },
+];
+const SOFT_LRG_POINT_SETS=[
+  [[5,1],[4,10],[9,10],[10,1]],[[12,2],[8,13],[7,14],[4,13]],[[4,9],[7,10],[12,9],[14,4]],[[4,3],[9,2],[9,8],[6,8]],
+  [[13,9],[7,9],[13,5],[11,9]],[[10,12],[8,3],[11,7],[3,7]],[[1,9],[6,2],[4,12],[3,6]],[[5,14],[8,14],[11,12],[15,5]],
+  [[1,3],[11,1],[3,4],[2,5]],[[3,11],[5,4],[10,3],[0,8]],[[14,9],[11,5],[10,8],[8,4]],[[11,2],[10,0],[2,10],[11,14]],
+  [[5,7],[14,5],[0,9],[4,2]],[[1,7],[13,4],[2,3],[13,3]],[[3,14],[3,10],[7,4],[12,8]],[[6,0],[3,9],[1,8],[12,7]],
+  [[4,14],[14,10],[5,0],[9,3]],[[14,3],[3,12],[11,3],[9,1]],[[3,3],[13,6],[2,12],[7,6]],[[3,2],[11,8],[4,8],[8,0]],
+  [[7,2],[2,4],[8,11],[12,10]],[[8,1],[9,7],[8,12],[13,7]],[[15,7],[13,8],[10,11],[2,2]],[[6,1],[8,6],[8,7],[0,6]],
+  [[4,4],[10,2],[4,1],[4,5]],[[5,2],[6,10],[14,6],[9,4]],[[5,5],[10,6],[5,3],[7,13]],[[12,13],[3,1],[14,8],[5,12]],
+  [[5,15],[8,15],[11,6],[12,11]],[[3,8],[12,14],[6,9],[6,5]],[[0,7],[3,5],[7,11],[1,6]],[[6,7],[4,6],[12,6],[2,11]],
+  [[13,2],[6,3],[10,9],[10,4]],[[6,15],[8,9],[13,10],[8,8]],[[8,5],[10,5],[5,11],[15,6]],[[4,7],[0,10],[8,2],[10,13]],
+  [[11,4],[13,11],[14,11],[5,10]],[[12,1],[7,7],[14,7],[14,12]],[[6,11],[5,9],[3,13],[9,13]],[[7,8],[10,10],[7,3],[7,15]],
+  [[9,11],[6,6],[4,11],[2,13]],[[7,12],[11,11],[9,14],[7,1]],[[15,10],[2,8],[1,5],[9,0]],[[15,8],[10,14],[10,7],[9,12]],
+  [[1,10],[9,5],[15,9],[1,11]],[[0,5],[6,14],[1,4],[7,5]],[[1,12],[9,15],[10,15],[5,8]],[[5,6],[12,12],[11,10],[12,3]],
+  [[9,6],[6,12],[7,0],[12,5]],[[11,13],[8,10],[2,7],[6,13]],[[13,13],[9,9],[2,9],[12,4]],[[5,13],[13,12],[2,6],[6,4]],
+];
+function buildSoftLrgBrushes(){
+  const out=[];
+  for(const set of SOFT_LRG_POINT_SETS){
+    const mask=new Uint8Array(16*16);
+    for(const p of set){
+      const x=p[0]|0;
+      const y=p[1]|0;
+      if(x<0||y<0||x>=16||y>=16) continue;
+      mask[y*16+x]=1;
+    }
+    out.push({ w:16, h:16, mask });
+  }
+  return out;
+}
+const SOFT_LRG_BRUSHES=buildSoftLrgBrushes();
+function stampTool(frame,x,y,val,tool,deltaMag){
+  const baseSize=toolSettings[tool]?.size ?? 1;
+  if(tool==='blobby'){
+    const bump=Math.min(14,Math.round((deltaMag||0)*0.5));
+    const s=clampBrushSize(baseSize+bump);
+    stamp(frame,x,y,val,s);
+    return;
+  }
+  if(tool==='stippleTiny'){
+    const brush=STIPPLE_TINY_BRUSHES[(Math.random()*STIPPLE_TINY_BRUSHES.length)|0];
+    stampPattern(frame,x,y,val,clampBrushSize(baseSize),brush);
+    return;
+  }
+  if(tool==='softLrg'){
+    const brush=SOFT_LRG_BRUSHES[(Math.random()*SOFT_LRG_BRUSHES.length)|0];
+    stampPattern(frame,x,y,val,clampBrushSize(baseSize),brush);
+    return;
+  }
+  stamp(frame,x,y,val,clampBrushSize(baseSize));
+}
+function drawLineTool(frame,a,b,val,tool){
+  const dx=b.x-a.x;
+  const dy=b.y-a.y;
+  const steps=Math.max(Math.abs(dx),Math.abs(dy));
+  const deltaMag=Math.hypot(dx,dy);
+  if(steps===0){
+    stampTool(frame,a.x,a.y,val,tool,deltaMag);
+    return;
+  }
+  for(let i=0;i<=steps;i++){
+    const t=i/steps;
+    const x=Math.round(a.x+t*dx);
+    const y=Math.round(a.y+t*dy);
+    stampTool(frame,x,y,val,tool,deltaMag);
+  }
+}
 function drawLineValue(frame,a,b,val,size){
   // 线段离散为很多个像素点，每个点用 stamp 来保证粗细
   const dx=b.x-a.x,dy=b.y-a.y;
@@ -467,11 +679,46 @@ function drawLineValue(frame,a,b,val,size){
 function randOffset(maxAbs){
   return Math.round((Math.random()*2-1)*maxAbs);
 }
-function jitterPoint(p,maxAbs){
-  // 抖动强度 n => 每个端点随机偏移 [-scale*n, +scale*n] 像素
-  if(!jitterOnEl.checked) return p;
-  if(maxAbs<=0) return p;
-  return {x:p.x+randOffset(maxAbs),y:p.y+randOffset(maxAbs)};
+let jitterStrokeId=1;
+let jitterSegId=0;
+function hash32(n){
+  let x=n|0;
+  x=Math.imul(x^(x>>>16),0x45d9f3b);
+  x=Math.imul(x^(x>>>16),0x45d9f3b);
+  x=(x^(x>>>16))>>>0;
+  return x;
+}
+function jitterOffset(seed,maxAbs){
+  if(maxAbs<=0) return 0;
+  const span=maxAbs*2+1;
+  return (hash32(seed)%span)-maxAbs;
+}
+function nextJitterBase(){
+  return ((jitterStrokeId&0xffff)<<16) ^ (jitterSegId++ & 0xffff);
+}
+function makeFrameOffsets(base,maxAbs){
+  const out=[];
+  for(let fi=0;fi<3;fi++){
+    const dx=jitterOffset(base+fi*131,maxAbs);
+    const dy=jitterOffset(base+fi*131+77,maxAbs);
+    out.push({dx,dy});
+  }
+  if(maxAbs>0){
+    const fix=[{dx:-maxAbs,dy:0},{dx:0,dy:maxAbs},{dx:maxAbs,dy:0}];
+    const allSame=out[0].dx===out[1].dx && out[0].dy===out[1].dy && out[0].dx===out[2].dx && out[0].dy===out[2].dy;
+    if(allSame){
+      out[0]=fix[0]; out[1]=fix[1]; out[2]=fix[2];
+    }else{
+      for(let i=0;i<3;i++){
+        for(let j=0;j<i;j++){
+          if(out[i].dx===out[j].dx && out[i].dy===out[j].dy){
+            out[i]=fix[i];
+          }
+        }
+      }
+    }
+  }
+  return out;
 }
 function hexToRGB(hex){
   const h=hex.replace('#','');
@@ -545,6 +792,18 @@ function stopAnim(){
     animId=null;
   }
 }
+function applyPlaybackMode(){
+  if(jitterOnEl && jitterOnEl.checked){
+    stopAnim();
+    displayFrame=0;
+    renderCurrent();
+    startAnim();
+  }else{
+    stopAnim();
+    displayFrame=3;
+    renderCurrent();
+  }
+}
 function drawSegment(from,to,val){
   const size=toolSettings[currentTool]?.size ?? 1;
   const erasing=val===0;
@@ -554,20 +813,51 @@ function drawSegment(from,to,val){
     }
     return;
   }
-  const maxAbs=(jitterLevel||0);
-  const jitterActive=jitterOnEl.checked && maxAbs>0;
+  const baseJitter=(jitterLevel||0);
+  const toolJitterScale=(currentTool==='pencil') ? 2 : 1;
+  const maxAbs=baseJitter*toolJitterScale;
+  const jitterActive=maxAbs>0;
   if(currentTool==='palette'){
-    for(let fi=0;fi<3;fi++){
-      const pp=jitterActive ? jitterPoint(to,maxAbs) : to;
-      stampPalette(frames[fi],pp.x,pp.y,val,size);
+    if(jitterActive){
+      const base=nextJitterBase();
+      const offsets=makeFrameOffsets(base,maxAbs);
+      for(let fi=0;fi<3;fi++){
+        const o=offsets[fi];
+        stampPalette(frames[fi],to.x+o.dx,to.y+o.dy,val,size);
+      }
+    }else{
+      for(let fi=0;fi<3;fi++){
+        stampPalette(frames[fi],to.x,to.y,val,size);
+      }
     }
     stampPalette(frames[3],to.x,to.y,val,size);
     return;
   }
-  for(let fi=0;fi<3;fi++){
+  if(currentTool==='blobby' || currentTool==='stippleTiny' || currentTool==='softLrg'){
     if(jitterActive){
-      drawLineValue(frames[fi],jitterPoint(from,maxAbs),jitterPoint(to,maxAbs),val,size);
+      const base=nextJitterBase();
+      const offsets=makeFrameOffsets(base,maxAbs);
+      for(let fi=0;fi<3;fi++){
+        const o=offsets[fi];
+        drawLineTool(frames[fi],{x:from.x+o.dx,y:from.y+o.dy},{x:to.x+o.dx,y:to.y+o.dy},val,currentTool);
+      }
     }else{
+      for(let fi=0;fi<3;fi++){
+        drawLineTool(frames[fi],from,to,val,currentTool);
+      }
+    }
+    drawLineTool(frames[3],from,to,val,currentTool);
+    return;
+  }
+  if(jitterActive){
+    const base=nextJitterBase();
+    const offsets=makeFrameOffsets(base,maxAbs);
+    for(let fi=0;fi<3;fi++){
+      const o=offsets[fi];
+      drawLineValue(frames[fi],{x:from.x+o.dx,y:from.y+o.dy},{x:to.x+o.dx,y:to.y+o.dy},val,size);
+    }
+  }else{
+    for(let fi=0;fi<3;fi++){
       drawLineValue(frames[fi],from,to,val,size);
     }
   }
@@ -582,6 +872,8 @@ canvas.addEventListener('pointerdown',e=>{
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
   drawing=true;
+  jitterStrokeId=(jitterStrokeId+1)|0;
+  jitterSegId=0;
   pushHistory();
   last=getPos(e);
   const val=getPaintValue();
@@ -611,8 +903,12 @@ function stopDrawing(e){
 canvas.addEventListener('pointerup',stopDrawing);
 canvas.addEventListener('pointercancel',stopDrawing);
 canvas.addEventListener('pointerleave',stopDrawing);
+canvas.addEventListener('contextmenu',e=>{ e.preventDefault(); });
 penBtn.addEventListener('click',()=>{ setTool('pencil'); });
 pen2Btn.addEventListener('click',()=>{ setTool('pen'); });
+blobbyBtn.addEventListener('click',()=>{ setTool('blobby'); });
+stippleTinyBtn.addEventListener('click',()=>{ setTool('stippleTiny'); });
+softLrgBtn.addEventListener('click',()=>{ setTool('softLrg'); });
 eraserBtn.addEventListener('click',()=>{ setTool('eraser'); });
 
 function clearCanvas(){
@@ -677,30 +973,50 @@ document.getElementById('switchColor').addEventListener('click',()=>{
   displayFrame=3;
   colorPage.style.display='flex';
   container.classList.add('color-mode');
+  schemeBaseline=captureBaseline();
+  syncOutlineColorsUI();
   renderCurrent();
 });
 document.getElementById('back').addEventListener('click',()=>{
   colorPage.style.display='none';
   container.classList.remove('color-mode');
-  if(jitterOnEl.checked){
-    displayFrame=0;
-    startAnim();
-  }else{
-    displayFrame=3;
-  }
-  renderCurrent();
+  applyPlaybackMode();
 });
 document.querySelectorAll('#colorPage input[type=color]').forEach(input=>{
   const idx=Number(input.dataset.index);
-  input.value=colorMap[idx];
+  if(idx>=OUTLINE_FIRST && idx<=OUTLINE_LAST){
+    input.value=outlineColorStore[idx] ?? colorMap[2];
+  }else{
+    input.value=colorMap[idx];
+  }
   input.addEventListener('change',()=>{
-    colorMap[idx]=input.value;
-    if(idx===1){ applyBackground(); }
+    const next=input.value;
+    if(idx>=OUTLINE_FIRST && idx<=OUTLINE_LAST){
+      outlineColorStore[idx]=next;
+      syncOutlineColorMap();
+    }else{
+      colorMap[idx]=next;
+      if(idx===2 && !(separateOutlineEl && separateOutlineEl.checked)) syncOutlineColorMap();
+      if(idx===1){ applyBackground(); }
+    }
     syncPaletteButtonsColors();
     renderCurrent();
   });
 });
+function syncOutlineColorsUI(){
+  if(!outlineColorsEl) return;
+  outlineColorsEl.style.display=(separateOutlineEl && separateOutlineEl.checked)?'flex':'none';
+}
+if(separateOutlineEl){
+  separateOutlineEl.addEventListener('change',()=>{
+    syncOutlineColorsUI();
+    syncOutlineColorMap();
+    renderCurrent();
+  });
+}
 const schemeSelectEl=document.getElementById('schemeSelect');
+const schemeResetBtn=document.getElementById('schemeReset');
+const schemeSaveBtn=document.getElementById('schemeSave');
 const paletteSchemes=[
   { id:'pico8', name:'PICO-8', colors:['#000000','#1d2b53','#7e2553','#008751','#ab5236','#5f574f','#c2c3c7','#fff1e8','#ff004d','#ffa300','#ffec27','#00e436','#29adff','#83769c','#ff77a8','#ffccaa'] },
   { id:'sweetie16', name:'Sweetie 16', colors:['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179','#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'] },
@@ -708,12 +1024,109 @@ const paletteSchemes=[
   { id:'db16', name:'DawnBringer 16', colors:['#140c1c','#442434','#30346d','#4e4a4e','#854c30','#346524','#d04648','#757161','#597dce','#d27d2c','#8595a1','#6daa2c','#d2aa99','#6dc2ca','#dad45e','#deeed6'] },
   { id:'enos16', name:'ENOS16', colors:['#fafafa','#d4d4d4','#9d9d9d','#4b4b4b','#f9d381','#eaaf4d','#f9938a','#e75952','#9ad1f9','#58aeee','#8deda7','#44c55b','#c3a7e1','#9569c8','#bab5aa','#948e82'] },
 ];
+const CUSTOM_SCHEMES_STORAGE_KEY='wpaint.paletteSchemes.v1';
+function normalizeScheme(raw){
+  if(!raw || typeof raw!=='object') return null;
+  const id=String(raw.id||'').trim();
+  const name=String(raw.name||'').trim();
+  const colors=raw.colors;
+  if(!id || !name || !Array.isArray(colors) || colors.length!==BASE_COLOR_COUNT) return null;
+  const normalizedColors=colors.map(c=>String(c||'').trim()).filter(Boolean);
+  if(normalizedColors.length!==BASE_COLOR_COUNT) return null;
+  const outlineColorsRaw=raw.outlineColors;
+  let normalizedOutlineColors=null;
+  if(Array.isArray(outlineColorsRaw) && outlineColorsRaw.length===(OUTLINE_LAST-OUTLINE_FIRST+1)){
+    const tmp=outlineColorsRaw.map(c=>String(c||'').trim()).filter(Boolean);
+    if(tmp.length===(OUTLINE_LAST-OUTLINE_FIRST+1)) normalizedOutlineColors=tmp;
+  }
+  const separateOutline=(raw.separateOutline===true || raw.separateOutline===false) ? raw.separateOutline : null;
+  const out={ id, name, colors: normalizedColors };
+  if(normalizedOutlineColors) out.outlineColors=normalizedOutlineColors;
+  if(separateOutline!==null) out.separateOutline=separateOutline;
+  return out;
+}
+function loadCustomPaletteSchemes(){
+  try{
+    const raw=localStorage.getItem(CUSTOM_SCHEMES_STORAGE_KEY);
+    if(!raw) return [];
+    const parsed=JSON.parse(raw);
+    if(!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeScheme).filter(Boolean);
+  }catch{
+    return [];
+  }
+}
+function saveCustomPaletteSchemes(list){
+  try{
+    localStorage.setItem(CUSTOM_SCHEMES_STORAGE_KEY,JSON.stringify(list));
+  }catch{}
+}
+let customPaletteSchemes=loadCustomPaletteSchemes();
+for(const s of customPaletteSchemes){
+  if(!paletteSchemes.some(x=>x.id===s.id)) paletteSchemes.push(s);
+}
+let schemeBaseline=null;
+function getCurrentPalette16(){
+  const colors=[];
+  for(let i=1;i<=BASE_COLOR_COUNT;i++) colors.push(colorMap[i]);
+  return colors;
+}
+function getOutlineColors5(){
+  const colors=[];
+  for(let i=OUTLINE_FIRST;i<=OUTLINE_LAST;i++) colors.push(outlineColorStore[i] ?? colorMap[2]);
+  return colors;
+}
+function setOutlineColors5(colors){
+  if(!Array.isArray(colors) || colors.length!==(OUTLINE_LAST-OUTLINE_FIRST+1)) return;
+  for(let i=OUTLINE_FIRST;i<=OUTLINE_LAST;i++){
+    const c=colors[i-OUTLINE_FIRST];
+    if(!c) continue;
+    outlineColorStore[i]=c;
+    const input=document.querySelector(`#colorPage input[type=color][data-index="${i}"]`);
+    if(input) input.value=c;
+  }
+}
+function setPalette16(colors){
+  for(let i=1;i<=BASE_COLOR_COUNT;i++){
+    const c=colors[i-1];
+    if(!c) continue;
+    colorMap[i]=c;
+    const input=document.querySelector(`#colorPage input[type=color][data-index="${i}"]`);
+    if(input) input.value=c;
+  }
+}
+function captureBaseline(){
+  return {
+    colors: getCurrentPalette16(),
+    outlineColors: getOutlineColors5(),
+    separateOutline: Boolean(separateOutlineEl && separateOutlineEl.checked),
+  };
+}
+function applyBaseline(baseline){
+  if(!baseline) return;
+  setPalette16(baseline.colors);
+  setOutlineColors5(baseline.outlineColors);
+  if(separateOutlineEl) separateOutlineEl.checked=Boolean(baseline.separateOutline);
+  syncOutlineColorsUI();
+  syncOutlineColorMap();
+  applyBackground();
+  syncPaletteButtonsColors();
+  renderCurrent();
+}
+function appendSchemeOption(scheme){
+  if(!schemeSelectEl) return;
+  const opt=document.createElement('option');
+  opt.value=scheme.id;
+  opt.textContent=scheme.name;
+  schemeSelectEl.appendChild(opt);
+}
 function applyPaletteScheme(colors){
   for(let i=1;i<=BASE_COLOR_COUNT;i++){
     colorMap[i]=colors[i-1];
     const input=document.querySelector(`#colorPage input[type=color][data-index="${i}"]`);
     if(input) input.value=colorMap[i];
   }
+  syncOutlineColorMap();
   applyBackground();
   syncPaletteButtonsColors();
   renderCurrent();
@@ -724,10 +1137,7 @@ if(schemeSelectEl){
   keepOpt.textContent='配色方案';
   schemeSelectEl.appendChild(keepOpt);
   for(const s of paletteSchemes){
-    const opt=document.createElement('option');
-    opt.value=s.id;
-    opt.textContent=s.name;
-    schemeSelectEl.appendChild(opt);
+    appendSchemeOption(s);
   }
   schemeSelectEl.value='';
   schemeSelectEl.addEventListener('change',()=>{
@@ -735,6 +1145,41 @@ if(schemeSelectEl){
     const scheme=paletteSchemes.find(s=>s.id===id);
     if(!scheme) return;
     applyPaletteScheme(scheme.colors);
+    if(scheme && scheme.separateOutline!=null && separateOutlineEl){
+      separateOutlineEl.checked=Boolean(scheme.separateOutline);
+      syncOutlineColorsUI();
+    }
+    if(scheme && Array.isArray(scheme.outlineColors)) setOutlineColors5(scheme.outlineColors);
+    syncOutlineColorMap();
+    applyBackground();
+    syncPaletteButtonsColors();
+    renderCurrent();
+    schemeBaseline=captureBaseline();
+  });
+}
+if(schemeResetBtn){
+  schemeResetBtn.addEventListener('click',()=>{
+    applyBaseline(schemeBaseline);
+  });
+}
+if(schemeSaveBtn){
+  schemeSaveBtn.addEventListener('click',()=>{
+    const colors=getCurrentPalette16();
+    const id=`custom-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+    const name=`自定义 ${customPaletteSchemes.length+1}`;
+    const scheme={
+      id,
+      name,
+      colors: colors.slice(),
+      outlineColors: getOutlineColors5(),
+      separateOutline: Boolean(separateOutlineEl && separateOutlineEl.checked),
+    };
+    paletteSchemes.push(scheme);
+    customPaletteSchemes.push(scheme);
+    saveCustomPaletteSchemes(customPaletteSchemes);
+    appendSchemeOption(scheme);
+    if(schemeSelectEl) schemeSelectEl.value=id;
+    schemeBaseline=captureBaseline();
   });
 }
 const checkerboard=document.getElementById('checkerboard');
@@ -742,6 +1187,18 @@ const toggleTransparent=document.getElementById('toggleTransparent');
 const jitterOnEl=document.getElementById('jitterOn');
 const jitter=document.getElementById('jitter');
 const jitterValue=document.getElementById('jitterValue');
+const jitterControlsEl=document.getElementById('jitterControls');
+const eraserControlsEl=document.getElementById('eraserControls');
+const eraseOnlyOutlineEl=document.getElementById('eraseOnlyOutline');
+const eraseOnlyEraserEl=document.getElementById('eraseOnlyEraser');
+if(eraseOnlyOutlineEl && eraseOnlyEraserEl){
+  eraseOnlyOutlineEl.addEventListener('change',()=>{
+    if(eraseOnlyOutlineEl.checked) eraseOnlyEraserEl.checked=false;
+  });
+  eraseOnlyEraserEl.addEventListener('change',()=>{
+    if(eraseOnlyEraserEl.checked) eraseOnlyOutlineEl.checked=false;
+  });
+}
 function updateJitter(){
   jitterLevel=Number(jitter.value)||0;
   jitterValue.textContent=String(jitterLevel);
@@ -749,26 +1206,17 @@ function updateJitter(){
 updateJitter();
 jitter.addEventListener('input',updateJitter);
 jitterOnEl.addEventListener('change',()=>{
-  if(jitterOnEl.checked){
-    displayFrame=0;
-    startAnim();
-  }else{
-    stopAnim();
-    displayFrame=3;
-    renderCurrent();
+  if(container.classList.contains('color-mode')){
+    displayFrame=jitterOnEl.checked?0:3;
+    return;
   }
+  applyPlaybackMode();
 });
 sizeEl.addEventListener('input',()=>{
   const v=Math.max(1,Math.min(31,Number(sizeEl.value)||1));
   if(!toolSettings[currentTool]) toolSettings[currentTool]={ size:1 };
   toolSettings[currentTool].size=v;
   sizeValueEl.textContent=String(v);
-});
-function syncOutlineColorsUI(){
-  outlineColorsEl.style.display=separateOutlineEl.checked?'flex':'none';
-}
-separateOutlineEl.addEventListener('change',()=>{
-  syncOutlineColorsUI();
 });
 function fileToImage(file){
   return new Promise((resolve,reject)=>{
@@ -909,6 +1357,27 @@ document.addEventListener('mousedown',(e)=>{
 });
 fileMenuEl.addEventListener('click',(e)=>{
   if(e.target.closest('button')) closeFileMenu();
+});
+const aboutBtnEl=document.getElementById('aboutBtn');
+const aboutModalEl=document.getElementById('aboutModal');
+const aboutCloseEl=document.getElementById('aboutClose');
+function openAbout(){
+  if(!aboutModalEl) return;
+  aboutModalEl.classList.add('is-open');
+}
+function closeAbout(){
+  if(!aboutModalEl) return;
+  aboutModalEl.classList.remove('is-open');
+}
+if(aboutBtnEl) aboutBtnEl.addEventListener('click',openAbout);
+if(aboutCloseEl) aboutCloseEl.addEventListener('click',closeAbout);
+if(aboutModalEl){
+  aboutModalEl.addEventListener('mousedown',(e)=>{
+    if(e.target===aboutModalEl) closeAbout();
+  });
+}
+window.addEventListener('keydown',(e)=>{
+  if(e.key==='Escape' && aboutModalEl && aboutModalEl.classList.contains('is-open')) closeAbout();
 });
 function resampleMaskOR(src,sw,sh,ow,oh){
   const out=new Uint8Array(ow*oh);
@@ -1096,13 +1565,7 @@ syncPaletteButtonsColors();
 syncHistoryUI();
 rebuildPatternList();
 renderPending();
-if(jitterOnEl.checked){
-  displayFrame=0;
-  startAnim();
-}else{
-  displayFrame=3;
-}
-renderCurrent();
+applyPlaybackMode();
 setTool('pencil');
 
 function nearestPaletteIndex(r,g,b,paletteRGB){
