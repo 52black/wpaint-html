@@ -14,15 +14,29 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .tool-btn:active { transform: translateY(1px); }
 .tool-btn.is-active { background: rgba(17,17,17,.92); color: #fff; border-color: rgba(0,0,0,.25); }
 .tool-btn.is-active:hover { background: rgba(17,17,17,.98); }
+.sidebar { position: absolute; top: 8px; right: 8px; width: 136px; height: calc(100% - 16px); z-index: 6; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.toolbar-right { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.toolbar-left { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+.toolbar-row { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+.toolbar-right .tool-btn, .toolbar-left .tool-btn { position: static; }
+.toolbar-left .pattern-picker, .toolbar-left .palette-panel { position: static; }
+.tool-btn.tool-icon { width: 40px; height: 32px; padding: 0; display: grid; place-items: center; }
+.tool-btn.tool-icon svg { width: 18px; height: 18px; display: block; }
+.tool-btn.has-icon { display: inline-flex; align-items: center; gap: 6px; }
+.file-menu-wrap { position: relative; z-index: 60; }
+.file-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 152px; padding: 8px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 10px 28px rgba(0,0,0,.16); display: none; box-sizing: border-box; z-index: 70; }
+.file-menu.is-open { display: block; }
+.file-menu .tool-btn { width: 100%; box-shadow: none; }
+.file-menu .tool-btn + .tool-btn { margin-top: 6px; }
 .tool-pen { top: 8px; right: 8px; }
-.tool-pen2 { top: 46px; right: 8px; }
-.tool-clear { top: 84px; right: 8px; }
-.tool-undo { top: 122px; right: 8px; }
-.tool-redo { top: 160px; right: 8px; }
-.tool-export { top: 198px; right: 8px; }
-.tool-importgif { top: 236px; right: 8px; }
-.tool-importbg { top: 274px; right: 8px; }
-.tool-advanced { top: 312px; right: 8px; }
+.tool-pen2 { top: 38px; right: 8px; }
+.tool-clear { top: 68px; right: 8px; }
+.tool-undo { top: 98px; right: 8px; }
+.tool-redo { top: 128px; right: 8px; }
+.tool-export { top: 158px; right: 8px; }
+.tool-importgif { top: 188px; right: 8px; }
+.tool-importbg { top: 218px; right: 8px; }
+.tool-advanced { top: 248px; right: 8px; }
 .tool-eraser { bottom: 8px; right: 8px; }
 .tool-color { bottom: 8px; left: 8px; }
 .tool-btn svg { width: 18px; height: 18px; display: block; }
@@ -30,9 +44,11 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .tool-btn.tool-pen, .tool-btn.tool-pen2, .tool-btn.tool-eraser { width: 40px; height: 32px; padding: 0; display: grid; place-items: center; }
 .overlay { position: absolute; inset: 0; background: rgba(245,245,245,.96); display: none; flex-direction: column; padding: 12px; box-sizing: border-box; z-index: 3; }
 .container.color-mode .tool-btn { display: none; }
+.container.color-mode .sidebar { display: none; }
 .container.color-mode .jitter-panel { display: none !important; }
 .container.color-mode .canvas { display: none; }
 .container.color-mode .checkerboard { display: none; }
+.container.color-mode .palette-panel { display: none; }
 .jitter-panel { position: absolute; top: 8px; left: 8px; z-index: 4; display: none; grid-template-rows: auto auto; gap: 8px; padding: 8px 10px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.86); font-size: 12px; }
 .container.advanced .jitter-panel { display: grid; }
 .jitter-panel .row { display: flex; align-items: center; gap: 8px; }
@@ -56,16 +72,16 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
   background-size: 16px 16px;
   background-position: 0 0, 8px 8px;
 }
-.palette-panel { position: absolute; left: 76px; bottom: 8px; z-index: 2; display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; width: 280px; }
-.pattern-picker { position: absolute; right: 56px; top: 270px; z-index: 3; }
+.palette-panel { z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; width: 136px; }
+.pattern-picker { z-index: 3; position: relative; width: 136px; }
 .container.color-mode .pattern-picker { display: none; }
-.pattern-select { width: 88px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); background: rgba(255,255,255,.92); padding: 0 10px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+.pattern-select { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); background: rgba(255,255,255,.92); padding: 0 10px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 .pattern-select:active { transform: translateY(1px); }
 .pattern-select .thumb { width: 18px; height: 18px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.7); image-rendering: pixelated; }
-.pattern-popover { position: absolute; left: 0; bottom: 34px; width: 292px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 10px; display: none; box-sizing: border-box; }
+.pattern-popover { position: absolute; left: auto; right: 0; bottom: 34px; width: 152px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 10px; display: none; box-sizing: border-box; z-index: 40; }
 .pattern-popover.is-open { display: block; }
 .pattern-popover { max-height: 240px; overflow: auto; }
-.pattern-list { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.pattern-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .pattern-item { height: 34px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.8); cursor: pointer; display: grid; place-items: center; padding: 0; }
 .pattern-item.is-active { background: rgba(17,17,17,.92); border-color: rgba(0,0,0,.25); }
 .pattern-item canvas { width: 22px; height: 22px; image-rendering: pixelated; }
@@ -76,7 +92,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .pattern-preview { width: 92px; height: 92px; border-radius: 12px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.8); display: grid; place-items: center; }
 .pattern-preview canvas { width: 80px; height: 80px; image-rendering: pixelated; }
 .pattern-stage .row { display: flex; align-items: center; gap: 8px; }
-.palette-btn { width: 28px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.92); cursor: pointer; display: grid; place-items: center; padding: 0; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.palette-btn { width: 26px; height: 26px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.92); cursor: pointer; display: grid; place-items: center; padding: 0; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
 .palette-btn:active { transform: translateY(1px); }
 .palette-btn.is-active { background: rgba(17,17,17,.92); border-color: rgba(0,0,0,.25); }
 .palette-btn svg { width: 16px; height: 16px; }
@@ -104,17 +120,56 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 </head>
 <body>
 <div class="container">
-<button id="pen" class="tool-btn tool-pen" title="铅笔" aria-label="铅笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span></button>
-<button id="pen2" class="tool-btn tool-pen2" title="钢笔" aria-label="钢笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span></button>
-<button id="clear" class="tool-btn tool-clear">清空</button>
-<button id="undo" class="tool-btn tool-undo">撤销</button>
-<button id="redo" class="tool-btn tool-redo">重做</button>
-<button id="exportGif" class="tool-btn tool-export">导出GIF</button>
-<button id="importGif" class="tool-btn tool-importgif">导入GIF</button>
-<button id="importBg" class="tool-btn tool-importbg">导入背景</button>
-<button id="advanced" class="tool-btn tool-advanced">高级</button>
-<button id="eraser" class="tool-btn tool-eraser" title="橡皮擦" aria-label="橡皮擦"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19H4a2 2 0 0 1-2-2v-1l11.5-12.5Z"/></svg></span></button>
-<button id="switchColor" class="tool-btn tool-color">换色</button>
+<div class="sidebar" aria-label="右侧栏">
+<div class="toolbar-right" aria-label="工具栏">
+  <div class="toolbar-row" aria-label="画笔">
+    <button id="pen" class="tool-btn tool-pen" title="铅笔" aria-label="铅笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span></button>
+    <button id="pen2" class="tool-btn tool-pen2" title="钢笔" aria-label="钢笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span></button>
+    <button id="eraser" class="tool-btn tool-eraser" title="橡皮擦" aria-label="橡皮擦"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19H4a2 2 0 0 1-2-2v-1l11.5-12.5Z"/></svg></span></button>
+  </div>
+  <div class="toolbar-row" aria-label="历史">
+    <button id="undo" class="tool-btn tool-undo tool-icon" title="撤销" aria-label="撤销"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9H3"/></svg></span></button>
+    <button id="redo" class="tool-btn tool-redo tool-icon" title="重做" aria-label="重做"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9h9"/></svg></span></button>
+    <button id="clear" class="tool-btn tool-clear tool-icon" title="清空" aria-label="清空"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 16H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg></span></button>
+  </div>
+  <div class="toolbar-row" aria-label="操作">
+    <button id="switchColor" class="tool-btn tool-color tool-icon" title="换色" aria-label="换色"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18c2.2 0 3-1 3-2.5S14 16 12.5 16H12a2 2 0 0 1 0-4h1.2c1.9 0 3.8-1.5 3.8-4.2A4.8 4.8 0 0 0 12 3Z"/><path d="M7.5 10.5h.01"/><path d="M9.5 7.5h.01"/><path d="M14.5 7.5h.01"/><path d="M16.5 10.5h.01"/></svg></span></button>
+    <button id="advanced" class="tool-btn tool-advanced tool-icon" title="高级" aria-label="高级"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="2" y1="14" x2="6" y2="14"/><line x1="10" y1="8" x2="14" y2="8"/><line x1="18" y1="16" x2="22" y2="16"/></svg></span></button>
+    <div class="file-menu-wrap">
+      <button id="fileMenuToggle" type="button" class="tool-btn tool-icon" title="文件" aria-label="文件" aria-haspopup="menu" aria-expanded="false"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span></button>
+      <div id="fileMenu" class="file-menu" role="menu" aria-label="文件操作">
+        <button id="exportGif" class="tool-btn tool-export" role="menuitem">导出GIF</button>
+        <button id="importGif" class="tool-btn tool-importgif" role="menuitem">导入GIF</button>
+        <button id="importBg" class="tool-btn tool-importbg" role="menuitem">导入背景</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toolbar-left" aria-label="颜色与图案">
+  <div class="pattern-picker" aria-label="图案设置">
+    <button id="patternSelect" type="button" class="pattern-select" aria-haspopup="dialog" aria-expanded="false">
+      <canvas id="patternThumb" class="thumb" width="18" height="18"></canvas>
+      <span id="patternSelectLabel">默认图案</span>
+    </button>
+    <div id="patternPopover" class="pattern-popover" role="dialog" aria-label="图案选择">
+      <div id="patternList" class="pattern-list" aria-label="图案列表"></div>
+      <div id="patternStage" class="pattern-stage" aria-label="图案编辑">
+        <div class="row">
+          <button id="patternUpload" type="button" class="action-btn">上传图案</button>
+        </div>
+        <div id="patternEdit" class="pattern-edit">
+          <div class="pattern-preview"><canvas id="patternPreview" width="32" height="32"></canvas></div>
+          <div style="display:grid;gap:8px;">
+            <button id="patternInvert" type="button" class="action-btn">反色</button>
+            <button id="patternConfirm" type="button" class="action-btn">确定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="paletteTools" class="palette-panel" aria-label="16色调色板笔"></div>
+</div>
+</div>
 <div class="jitter-panel">
   <div class="row">
     <label class="toggle"><input id="jitterOn" type="checkbox" checked><span>抖动</span></label>
@@ -134,28 +189,6 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 <input id="patternFile" type="file" accept="image/*" style="display:none">
 <input id="gifFile" type="file" accept="image/gif" style="display:none">
 <input id="bgFile" type="file" accept="image/*" style="display:none">
-<div id="paletteTools" class="palette-panel" aria-label="16色调色板笔"></div>
-<div class="pattern-picker" aria-label="图案设置">
-  <button id="patternSelect" type="button" class="pattern-select" aria-haspopup="dialog" aria-expanded="false">
-    <canvas id="patternThumb" class="thumb" width="18" height="18"></canvas>
-    <span id="patternSelectLabel">默认图案</span>
-  </button>
-  <div id="patternPopover" class="pattern-popover" role="dialog" aria-label="图案选择">
-    <div id="patternList" class="pattern-list" aria-label="图案列表"></div>
-    <div id="patternStage" class="pattern-stage" aria-label="图案编辑">
-      <div class="row">
-        <button id="patternUpload" type="button" class="action-btn">上传图案</button>
-      </div>
-      <div id="patternEdit" class="pattern-edit">
-        <div class="pattern-preview"><canvas id="patternPreview" width="32" height="32"></canvas></div>
-        <div style="display:grid;gap:8px;">
-          <button id="patternInvert" type="button" class="action-btn">反色</button>
-          <button id="patternConfirm" type="button" class="action-btn">确定</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
 <div id="checkerboard" class="checkerboard"></div>
 <canvas id="drawing" class="canvas" width="360" height="265"></canvas>
 <div id="colorPage" class="overlay">
@@ -853,6 +886,29 @@ document.addEventListener('mousedown',(e)=>{
   if(!patternPopoverEl.classList.contains('is-open')) return;
   if(patternPickerEl && patternPickerEl.contains(e.target)) return;
   closePatternPopover();
+});
+const fileMenuToggleEl=document.getElementById('fileMenuToggle');
+const fileMenuEl=document.getElementById('fileMenu');
+function openFileMenu(){
+  fileMenuEl.classList.add('is-open');
+  fileMenuToggleEl.setAttribute('aria-expanded','true');
+}
+function closeFileMenu(){
+  fileMenuEl.classList.remove('is-open');
+  fileMenuToggleEl.setAttribute('aria-expanded','false');
+}
+fileMenuToggleEl.addEventListener('click',()=>{
+  if(fileMenuEl.classList.contains('is-open')) closeFileMenu();
+  else openFileMenu();
+});
+document.addEventListener('mousedown',(e)=>{
+  if(!fileMenuEl.classList.contains('is-open')) return;
+  if(fileMenuToggleEl && fileMenuToggleEl.contains(e.target)) return;
+  if(fileMenuEl && fileMenuEl.contains(e.target)) return;
+  closeFileMenu();
+});
+fileMenuEl.addEventListener('click',(e)=>{
+  if(e.target.closest('button')) closeFileMenu();
 });
 function resampleMaskOR(src,sw,sh,ow,oh){
   const out=new Uint8Array(ow*oh);
