@@ -6,13 +6,14 @@
 <title>绘制页面</title>
 <style>
 html,body { height: 100%; }
-body { margin: 0; background: #000; display: grid; place-items: center; }
+body { margin: 0; background: #000; display: grid; place-items: center; overflow: hidden; }
 .stage, .container, .canvas, .sidebar, .tool-btn, .palette-panel, .pattern-picker { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .tool-btn, .canvas { -webkit-tap-highlight-color: transparent; }
 .stage { position: relative; }
 .stage .container { transform-origin: top left; }
 .container { width: 512px; height: 342px; position: relative; background: #fff; overflow: hidden; }
-.canvas { position: absolute; top: 0; left: 0; width: 360px; height: 342px; border: 1px solid #ccc; background: transparent; z-index: 2; touch-action: none; }
+.canvas-viewport { position: absolute; top: 0; left: 0; width: 360px; height: 342px; border: 1px solid #ccc; background: transparent; z-index: 2; overflow: hidden; touch-action: none; }
+.canvas { position: absolute; top: 0; left: 0; width: 360px; height: 342px; border: none; background: transparent; z-index: 2; touch-action: none; }
 .tool-btn { position: absolute; z-index: 2; padding: 6px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 10px; background: rgba(255,255,255,.92); color: #111; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); backdrop-filter: blur(6px); }
 .tool-btn:hover { background: rgba(255,255,255,.98); }
 .tool-btn:active { transform: translateY(1px); }
@@ -49,16 +50,33 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .sidebar-footer { margin-top: auto; display: flex; gap: 2px; justify-content: flex-end; align-items: center; flex-wrap: nowrap; }
 .sidebar-footer .action-btn { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; }
 .sidebar-footer .action-btn svg { width: 16px; height: 16px; display: block; }
+.zoom-menu-wrap { position: relative; }
+.zoom-menu { position: absolute; right: 0; bottom: calc(100% + 6px); width: 220px; padding: 10px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 10px 28px rgba(0,0,0,.16); display: none; box-sizing: border-box; z-index: 80; }
+.zoom-menu.is-open { display: block; }
+.zoom-menu .row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.zoom-menu .row + .row { margin-top: 8px; }
+.zoom-menu .zoom-controls { display: flex; align-items: center; gap: 8px; flex: 1; }
+.zoom-menu .zoom-controls input[type="range"] { width: 100%; accent-color: #111; }
+.zoom-menu .zoom-icon-btn { width: 30px; height: 30px; padding: 0; display: grid; place-items: center; box-shadow: none; }
+.zoom-menu .zoom-icon-btn svg { width: 16px; height: 16px; }
+.zoom-menu .pill { background: rgba(17,17,17,.92); color: #fff; }
+.canvas, .checkerboard { transform-origin: top left; }
 .action-btn:disabled { opacity: .6; cursor: not-allowed; }
 .modal-overlay { position: absolute; inset: 0; z-index: 80; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.35); padding: 16px; box-sizing: border-box; }
 .modal-overlay.is-open { display: flex; }
-.modal-card { width: min(420px,100%); border: 1px solid rgba(0,0,0,.12); border-radius: 14px; background: rgba(255,255,255,.98); box-shadow: 0 18px 50px rgba(0,0,0,.22); padding: 12px; box-sizing: border-box; }
-.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.modal-card { width: min(360px,100%); border: 1px solid rgba(0,0,0,.12); border-radius: 14px; background: rgba(255,255,255,.98); box-shadow: 0 18px 50px rgba(0,0,0,.22); padding: 12px; box-sizing: border-box; position: relative; }
+.modal-card.is-draggable { position: absolute; }
+.modal-card.anim-card { width: min(320px,100%); }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; cursor: grab; user-select: none; }
+.modal-head:active { cursor: grabbing; }
 .modal-body { display: grid; gap: 6px; font-size: 13px; line-height: 1.4; }
-.anim-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-.anim-frames { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1px solid rgba(0,0,0,.10); border-radius: 12px; background: rgba(255,255,255,.75); }
-.anim-frame-btn { width: 34px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); background: rgba(255,255,255,.92); cursor: pointer; }
+.anim-bar { display: flex; align-items: center; justify-content: flex-start; gap: 10px; margin-bottom: 8px; }
+.anim-frames { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; border: 1px solid rgba(0,0,0,.10); border-radius: 12px; background: rgba(255,255,255,.75); touch-action: none; }
+.anim-frame-btn { width: 34px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); background: rgba(255,255,255,.92); cursor: pointer; touch-action: none; }
 .anim-frame-btn.is-active { background: rgba(17,17,17,.92); color: #fff; border-color: rgba(17,17,17,.92); }
+.anim-frame-btn.is-selected { box-shadow: 0 0 0 2px rgba(0,0,0,.75) inset; }
+.anim-frame-btn.is-dragging { opacity: .75; }
+.anim-frame-placeholder { width: 34px; height: 28px; border-radius: 10px; border: 2px dashed rgba(0,0,0,.45); box-sizing: border-box; background: rgba(0,0,0,.02); }
 .anim-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .anim-row input[type="number"] { width: 96px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); padding: 0 8px; }
 .overlay { position: absolute; inset: 0; background: rgba(245,245,245,.96); display: none; flex-direction: column; padding: 12px; box-sizing: border-box; z-index: 3; }
@@ -74,6 +92,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .jitter-panel .label { opacity: .8; }
 .jitter-panel input[type="range"] { accent-color: #111; }
 .jitter-panel input:disabled { opacity: .5; }
+.jitter-panel input[type="number"] { width: 62px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); padding: 0 8px; background: rgba(255,255,255,.9); }
 .jitter-panel select { height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.9); padding: 0 8px; }
 .toggle { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,.10); background: rgba(255,255,255,.85); user-select: none; }
 .toggle input[type="checkbox"] { width: 34px; height: 18px; appearance: none; -webkit-appearance: none; border-radius: 999px; background: rgba(0,0,0,.15); position: relative; outline: none; cursor: pointer; transition: background .15s ease; }
@@ -87,6 +106,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 .action-btn { padding: 6px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 10px; background: rgba(255,255,255,.92); color: #111; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
 .action-btn:hover { background: rgba(255,255,255,.98); }
 .action-btn:active { transform: translateY(1px); }
+.action-btn.is-active { background: rgba(17,17,17,.92); color: #fff; border-color: rgba(17,17,17,.92); }
 .checkerboard { position: absolute; top: 0; left: 0; width: 360px; height: 342px; z-index: 1; display: none;
   background-size: 16px 16px;
   background-position: 0 0, 8px 8px;
@@ -198,6 +218,22 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 <div class="sidebar-footer" aria-label="底部按钮">
   <button id="aboutBtn" type="button" class="action-btn" title="关于" aria-label="关于"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button>
   <button id="animBtn" type="button" class="action-btn" title="动画" aria-label="动画"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l12 6-12 6Z"/><path d="M3 6v12"/></svg></button>
+  <div class="zoom-menu-wrap">
+    <button id="zoomBtn" type="button" class="action-btn" title="画布缩放" aria-label="画布缩放" aria-haspopup="dialog" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg></button>
+    <div id="zoomMenu" class="zoom-menu" role="dialog" aria-label="画布缩放">
+      <div class="row">
+        <button id="zoomOut" type="button" class="action-btn zoom-icon-btn" aria-label="缩小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg></button>
+        <div class="zoom-controls">
+          <input id="canvasZoom" type="range" min="50" max="300" step="10" value="100" aria-label="画布缩放百分比">
+          <span id="canvasZoomValue" class="pill">100%</span>
+        </div>
+        <button id="zoomIn" type="button" class="action-btn zoom-icon-btn" aria-label="放大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button>
+      </div>
+      <div class="row">
+      <label class="toggle"><input id="canvasPanMode" type="checkbox"><span>拖动内容</span></label>
+      </div>
+    </div>
+  </div>
   <button id="cropBtn" type="button" class="action-btn" title="裁剪" aria-label="裁剪"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg></button>
   <button id="selectBtn" type="button" class="action-btn" title="选择" aria-label="选择"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2" stroke-dasharray="4 3"/></svg></button>
 </div>
@@ -210,6 +246,10 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
         <input id="jitter" type="range" min="0" max="10" step="1" value="1">
         <span id="jitterValue" class="pill">1</span>
       </div>
+    </div>
+    <div class="row">
+      <span class="label">内部延时(ms)</span>
+      <input id="jitterDelay" type="number" min="20" step="10" value="120">
     </div>
   </div>
   <div id="eraserControls" style="display:none">
@@ -234,8 +274,10 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
 <input id="patternFile" type="file" accept="image/*" style="display:none">
 <input id="gifFile" type="file" accept="image/gif" style="display:none">
 <input id="bgFile" type="file" accept="image/*" style="display:none">
-<div id="checkerboard" class="checkerboard"></div>
-<canvas id="drawing" class="canvas" width="360" height="342"></canvas>
+<div id="canvasViewport" class="canvas-viewport">
+  <div id="checkerboard" class="checkerboard"></div>
+  <canvas id="drawing" class="canvas" width="360" height="342"></canvas>
+</div>
 <div id="colorPage" class="overlay">
   <div class="color-header">
     <span></span>
@@ -320,24 +362,28 @@ body { margin: 0; background: #000; display: grid; place-items: center; }
   </div>
 </div>
 <div id="animModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="动画">
-  <div class="modal-card">
+  <div class="modal-card anim-card">
     <div class="modal-head">
       <strong>动画</strong>
-      <button id="animClose" type="button" class="action-btn">关闭</button>
+      <div class="anim-row">
+        <button id="animPlayClose" type="button" class="action-btn">播放并关闭</button>
+        <button id="animClose" type="button" class="action-btn">关闭</button>
+      </div>
     </div>
     <div class="anim-bar">
       <div class="anim-row">
         <button id="animNewFrame" type="button" class="action-btn">新建帧</button>
         <button id="animDeleteFrame" type="button" class="action-btn">删除帧</button>
-      </div>
-      <div class="anim-row">
+        <button id="animMultiSelect" type="button" class="action-btn">多选</button>
         <button id="animPlay" type="button" class="action-btn">播放</button>
       </div>
     </div>
     <div id="animFrameList" class="anim-frames" aria-label="帧列表"></div>
     <div class="anim-row" style="margin-top:10px;">
-      <span class="label">总延时(ms)</span>
+      <span class="label">持续时间(ms)</span>
       <input id="animDelay" type="number" min="30" step="10" value="360">
+      <button id="animApplyAllDelay" type="button" class="action-btn">应用到所有帧</button>
+      <button id="animExportGif" type="button" class="action-btn">导出GIF</button>
     </div>
   </div>
 </div>
@@ -348,6 +394,8 @@ import { GIFEncoder } from 'https://unpkg.com/gifenc@1.0.3';
 import { parseGIF, decompressFrames } from 'https://esm.sh/gifuct-js@2.1.2';
 const stageEl=document.getElementById('stage');
 const containerEl=document.querySelector('.container');
+const zoomBtnEl=document.getElementById('zoomBtn');
+const zoomMenuEl=document.getElementById('zoomMenu');
 function applyStageScale(){
   const vw=window.innerWidth||0;
   const vh=window.innerHeight||0;
@@ -361,6 +409,11 @@ function applyStageScale(){
   if(containerEl){
     containerEl.style.transform=`scale(${scale})`;
   }
+  if(zoomBtnEl){
+    const open=Boolean(zoomMenuEl && zoomMenuEl.classList.contains('is-open'));
+    zoomBtnEl.classList.toggle('is-active',open);
+    zoomBtnEl.setAttribute('aria-expanded',open?'true':'false');
+  }
 }
 applyStageScale();
 window.addEventListener('resize',applyStageScale);
@@ -372,6 +425,7 @@ window.addEventListener('orientationchange',applyStageScale);
 // 每个像素存的是 0~16 的“颜色值”，渲染时再用颜色映射表把它变成真正的颜色。
 // 约定：0 是“透明/橡皮擦”，不参与换色；1~16 才是可换色的调色板。
 const canvas=document.getElementById('drawing');
+const canvasViewportEl=document.getElementById('canvasViewport');
 const ctx=canvas.getContext('2d');
 const W=canvas.width,H=canvas.height;
 const MAX_COLOR_INDEX=21;
@@ -509,6 +563,7 @@ window.addEventListener('keydown',e=>{
 });
 function setTool(tool){
   // 切换当前工具，并同步 UI（激活态/粗细/抖动可用性）
+  if(canvasPanMode) setCanvasPanMode(false);
   currentTool=tool;
   penBtn.classList.toggle('is-active',tool==='pencil');
   pen2Btn.classList.toggle('is-active',tool==='pen');
@@ -811,9 +866,9 @@ function startAnim(){
   const tick=()=>{
     displayFrame=(displayFrame+1)%3;
     renderCurrent();
-    animId=window.setTimeout(tick,120);
+    animId=window.setTimeout(tick,getJitterSubDelayMs(displayFrame));
   };
-  animId=window.setTimeout(tick,120);
+  animId=window.setTimeout(tick,getJitterSubDelayMs(displayFrame));
 }
 function stopAnim(){
   if(animId!==null){
@@ -896,7 +951,47 @@ function pointerCanDraw(e){
   if(e.button!=null && e.button!==0) return false;
   return true;
 }
+let canvasPanMoveListener=null;
+let canvasPanUpListener=null;
+function startCanvasPan(e){
+  e.preventDefault();
+  canvasPanning=true;
+  canvasPanPointerId=e.pointerId;
+  canvasPanStart={ x:e.clientX, y:e.clientY };
+  canvasPanBase={ x:canvasViewPanX, y:canvasViewPanY };
+  if(canvasViewportEl) canvasViewportEl.style.cursor='grabbing';
+  else if(canvas) canvas.style.cursor='grabbing';
+  if(canvasPanMoveListener || canvasPanUpListener){
+    try{ if(canvasPanMoveListener) window.removeEventListener('pointermove',canvasPanMoveListener,true); }catch{}
+    try{ if(canvasPanUpListener) window.removeEventListener('pointerup',canvasPanUpListener,true); }catch{}
+    try{ if(canvasPanUpListener) window.removeEventListener('pointercancel',canvasPanUpListener,true); }catch{}
+  }
+  const onMove=(ev)=>{
+    if(!canvasPanning) return;
+    if(ev.pointerId!==canvasPanPointerId) return;
+    ev.preventDefault();
+    const dx=ev.clientX-(canvasPanStart?.x ?? ev.clientX);
+    const dy=ev.clientY-(canvasPanStart?.y ?? ev.clientY);
+    canvasViewPanX=(canvasPanBase?.x ?? canvasViewPanX)+dx;
+    canvasViewPanY=(canvasPanBase?.y ?? canvasViewPanY)+dy;
+    clampCanvasPan();
+    applyCanvasViewTransform();
+  };
+  const onUp=(ev)=>{
+    if(ev.pointerId!==canvasPanPointerId) return;
+    stopDrawing(ev);
+  };
+  canvasPanMoveListener=onMove;
+  canvasPanUpListener=onUp;
+  window.addEventListener('pointermove',onMove,true);
+  window.addEventListener('pointerup',onUp,true);
+  window.addEventListener('pointercancel',onUp,true);
+}
 canvas.addEventListener('pointerdown',e=>{
+  if(canvasPanMode){
+    startCanvasPan(e);
+    return;
+  }
   if(!pointerCanDraw(e)) return;
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
@@ -910,6 +1005,7 @@ canvas.addEventListener('pointerdown',e=>{
   renderCurrent();
 });
 canvas.addEventListener('pointermove',e=>{
+  if(canvasPanMode) return;
   if(!drawing) return;
   e.preventDefault();
   const p=getPos(e);
@@ -923,11 +1019,42 @@ canvas.addEventListener('pointermove',e=>{
   renderCurrent();
 });
 function stopDrawing(e){
+  if(canvasPanning && (!e || e.pointerId==null || e.pointerId===canvasPanPointerId)){
+    canvasPanning=false;
+    canvasPanPointerId=null;
+    canvasPanStart=null;
+    canvasPanBase=null;
+    try{ if(canvasPanMoveListener) window.removeEventListener('pointermove',canvasPanMoveListener,true); }catch{}
+    try{ if(canvasPanUpListener) window.removeEventListener('pointerup',canvasPanUpListener,true); }catch{}
+    try{ if(canvasPanUpListener) window.removeEventListener('pointercancel',canvasPanUpListener,true); }catch{}
+    canvasPanMoveListener=null;
+    canvasPanUpListener=null;
+    if(canvasPanMode){
+      if(canvasViewportEl) canvasViewportEl.style.cursor='grab';
+      else if(canvas) canvas.style.cursor='grab';
+    }
+    if(e && e.pointerId!=null){
+      try{ if(canvasViewportEl) canvasViewportEl.releasePointerCapture(e.pointerId); }catch{}
+      try{ canvas.releasePointerCapture(e.pointerId); }catch{}
+    }
+    return;
+  }
   if(!drawing) return;
   drawing=false;
   try{
     if(e && e.pointerId!=null) canvas.releasePointerCapture(e.pointerId);
   }catch{}
+}
+if(canvasViewportEl){
+  const panDown=(e)=>{
+    if(!canvasPanMode) return;
+    startCanvasPan(e);
+    e.stopPropagation();
+  };
+  canvasViewportEl.addEventListener('pointerdown',panDown,{capture:true});
+  canvasViewportEl.addEventListener('pointerup',stopDrawing,{capture:true});
+  canvasViewportEl.addEventListener('pointercancel',stopDrawing,{capture:true});
+  canvasViewportEl.addEventListener('pointerleave',stopDrawing,{capture:true});
 }
 canvas.addEventListener('pointerup',stopDrawing);
 canvas.addEventListener('pointercancel',stopDrawing);
@@ -953,7 +1080,6 @@ clearBtn.addEventListener('click',clearCanvas);
 function exportGif(){
   // 抖动开启 => 导出 3 帧循环；抖动关闭 => 导出稳定帧 1 张
   const exportFramesRaw=jitterOnEl.checked ? [frames[0],frames[1],frames[2]] : [frames[3]];
-  const delayMs=jitterOnEl.checked ? 120 : 0;
   const transparent=toggleTransparent.checked;
 
   // 不透明导出：把透明像素（0）拍扁到背景色（1），这样在任何查看器里都不会“看起来没内容”
@@ -971,9 +1097,11 @@ function exportGif(){
   for(let i=0;i<=MAX_COLOR_INDEX;i++) palette[i]=hexToRGB(colorMap[i] ?? '#000000');
 
   const gif=GIFEncoder({ repeat: jitterOnEl.checked ? 0 : -1 });
-  for(const indices of exportFrames){
+  for(let i=0;i<exportFrames.length;i++){
+    const indices=exportFrames[i];
     // frames 里存的是“调色板索引”，可以直接作为 gifenc 的 indexed bitmap 输入
-    const options={ palette, delay: delayMs };
+    const delay=jitterOnEl.checked ? getJitterSubDelayMs(i%3) : 0;
+    const options={ palette, delay };
     if(transparent) options.transparent=0;
     gif.writeFrame(indices,W,H,options);
   }
@@ -1213,13 +1341,157 @@ if(schemeSaveBtn){
 }
 const checkerboard=document.getElementById('checkerboard');
 const toggleTransparent=document.getElementById('toggleTransparent');
+const canvasZoomRangeEl=document.getElementById('canvasZoom');
+const canvasZoomValueEl=document.getElementById('canvasZoomValue');
+const zoomInEl=document.getElementById('zoomIn');
+const zoomOutEl=document.getElementById('zoomOut');
+const canvasPanModeEl=document.getElementById('canvasPanMode');
 const jitterOnEl=document.getElementById('jitterOn');
 const jitter=document.getElementById('jitter');
 const jitterValue=document.getElementById('jitterValue');
+const jitterDelayEl=document.getElementById('jitterDelay');
 const jitterControlsEl=document.getElementById('jitterControls');
 const eraserControlsEl=document.getElementById('eraserControls');
 const eraseOnlyOutlineEl=document.getElementById('eraseOnlyOutline');
 const eraseOnlyEraserEl=document.getElementById('eraseOnlyEraser');
+let timelinePlaying=false;
+let jitterSubDelay=120;
+let canvasViewScale=1;
+let canvasViewPanX=0;
+let canvasViewPanY=0;
+let canvasPanMode=false;
+let canvasPanning=false;
+let canvasPanPointerId=null;
+let canvasPanStart=null;
+let canvasPanBase=null;
+function applyCanvasViewTransform(){
+  const t=`translate(${Math.round(canvasViewPanX)}px,${Math.round(canvasViewPanY)}px) scale(${canvasViewScale})`;
+  if(canvas) canvas.style.transform=t;
+  updateCheckerboardScale();
+}
+function updateCheckerboardScale(){
+  if(!checkerboard) return;
+  if(!toggleTransparent || !toggleTransparent.checked) return;
+  if(customBgUrl) return;
+  const px=Math.max(2,Math.round(16*canvasViewScale));
+  checkerboard.style.backgroundSize=`${px}px ${px}px`;
+  checkerboard.style.backgroundPosition=`0 0, ${Math.round(px/2)}px ${Math.round(px/2)}px`;
+}
+function setCanvasViewScale(scale){
+  const prev=canvasViewScale;
+  const next=Math.max(0.5,Math.min(3,Number(scale)||1));
+  if(next!==prev){
+    const cx=W/2;
+    const cy=H/2;
+    canvasViewPanX=canvasViewPanX+(prev-next)*cx;
+    canvasViewPanY=canvasViewPanY+(prev-next)*cy;
+    clampCanvasPan();
+  }
+  canvasViewScale=next;
+  if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(next*100));
+  if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(next*100)}%`;
+  applyCanvasViewTransform();
+}
+function clampCanvasPan(){
+  const scaledW=W*canvasViewScale;
+  const scaledH=H*canvasViewScale;
+  const minX=Math.min(0,W-scaledW);
+  const maxX=Math.max(0,W-scaledW);
+  const minY=Math.min(0,H-scaledH);
+  const maxY=Math.max(0,H-scaledH);
+  canvasViewPanX=Math.max(minX,Math.min(maxX,canvasViewPanX));
+  canvasViewPanY=Math.max(minY,Math.min(maxY,canvasViewPanY));
+}
+function setCanvasPanMode(on){
+  const wasOn=canvasPanMode;
+  canvasPanMode=Boolean(on);
+  if(canvasPanModeEl) canvasPanModeEl.checked=canvasPanMode;
+  if(canvasViewportEl) canvasViewportEl.style.cursor=canvasPanMode?'grab':'crosshair';
+  else if(canvas) canvas.style.cursor=canvasPanMode?'grab':'crosshair';
+  if(!wasOn && canvasPanMode){
+    penBtn.classList.remove('is-active');
+    pen2Btn.classList.remove('is-active');
+    blobbyBtn.classList.remove('is-active');
+    stippleTinyBtn.classList.remove('is-active');
+    softLrgBtn.classList.remove('is-active');
+    eraserBtn.classList.remove('is-active');
+  }
+}
+function openZoomMenu(){
+  if(!zoomMenuEl || !zoomBtnEl) return;
+  zoomMenuEl.classList.add('is-open');
+  zoomBtnEl.classList.add('is-active');
+  zoomBtnEl.setAttribute('aria-expanded','true');
+  applyStageScale();
+}
+function closeZoomMenu(){
+  if(!zoomMenuEl || !zoomBtnEl) return;
+  zoomMenuEl.classList.remove('is-open');
+  zoomBtnEl.classList.remove('is-active');
+  zoomBtnEl.setAttribute('aria-expanded','false');
+  applyStageScale();
+}
+function toggleZoomMenu(){
+  if(!zoomMenuEl) return;
+  if(zoomMenuEl.classList.contains('is-open')) closeZoomMenu();
+  else openZoomMenu();
+}
+if(zoomBtnEl){
+  zoomBtnEl.addEventListener('click',(e)=>{
+    e.preventDefault();
+    toggleZoomMenu();
+  });
+}
+window.addEventListener('pointerdown',(e)=>{
+  if(!zoomMenuEl || !zoomBtnEl) return;
+  if(!zoomMenuEl.classList.contains('is-open')) return;
+  const target=e.target;
+  if(zoomMenuEl.contains(target) || zoomBtnEl.contains(target)) return;
+  closeZoomMenu();
+},{capture:true});
+if(canvasZoomRangeEl){
+  const onZoomInput=()=>{
+    const v=Math.max(50,Math.min(300,Number(canvasZoomRangeEl.value)||100));
+    setCanvasViewScale(v/100);
+  };
+  canvasZoomRangeEl.addEventListener('input',onZoomInput);
+  canvasZoomRangeEl.addEventListener('change',onZoomInput);
+}
+if(zoomInEl){
+  zoomInEl.addEventListener('click',()=>{
+    setCanvasViewScale((Math.round(canvasViewScale*100)+10)/100);
+  });
+}
+if(zoomOutEl){
+  zoomOutEl.addEventListener('click',()=>{
+    setCanvasViewScale((Math.round(canvasViewScale*100)-10)/100);
+  });
+}
+if(canvasPanModeEl){
+  canvasPanModeEl.addEventListener('change',()=>{
+    setCanvasPanMode(Boolean(canvasPanModeEl.checked));
+  });
+}
+setCanvasViewScale(1);
+setCanvasPanMode(false);
+function getJitterSubDelayMs(i){
+  return Math.max(20,Number(jitterSubDelay)||120);
+}
+function updateJitterSubDelays(){
+  const v=Math.max(20,Number(jitterDelayEl && jitterDelayEl.value)||120);
+  if(jitterDelayEl) jitterDelayEl.value=String(v);
+  jitterSubDelay=v;
+  if(container.classList.contains('color-mode')) return;
+  if(timelinePlaying) return;
+  if(jitterOnEl && jitterOnEl.checked){
+    stopAnim();
+    if(displayFrame===3) displayFrame=0;
+    renderCurrent();
+    startAnim();
+  }
+}
+updateJitterSubDelays();
+if(jitterDelayEl) jitterDelayEl.addEventListener('change',updateJitterSubDelays);
 if(eraseOnlyOutlineEl && eraseOnlyEraserEl){
   eraseOnlyOutlineEl.addEventListener('change',()=>{
     if(eraseOnlyOutlineEl.checked) eraseOnlyEraserEl.checked=false;
@@ -1390,13 +1662,97 @@ fileMenuEl.addEventListener('click',(e)=>{
 const aboutBtnEl=document.getElementById('aboutBtn');
 const aboutModalEl=document.getElementById('aboutModal');
 const aboutCloseEl=document.getElementById('aboutClose');
+const modalPositions=new Map();
+function getModalCard(modalEl){
+  return modalEl ? modalEl.querySelector('.modal-card') : null;
+}
+function getModalHead(modalEl){
+  return modalEl ? modalEl.querySelector('.modal-head') : null;
+}
+function clamp(v,min,max){
+  return Math.max(min,Math.min(max,v));
+}
+function centerModal(modalEl){
+  const card=getModalCard(modalEl);
+  if(!modalEl || !card) return;
+  card.classList.add('is-draggable');
+  const key=modalEl.id || 'modal';
+  if(modalPositions.has(key)){
+    const pos=modalPositions.get(key);
+    card.style.left=`${pos.left}px`;
+    card.style.top=`${pos.top}px`;
+    return;
+  }
+  const mw=modalEl.clientWidth;
+  const mh=modalEl.clientHeight;
+  const cw=card.offsetWidth;
+  const ch=card.offsetHeight;
+  const left=Math.max(8,Math.round((mw-cw)/2));
+  const top=Math.max(8,Math.round((mh-ch)/2));
+  card.style.left=`${left}px`;
+  card.style.top=`${top}px`;
+  modalPositions.set(key,{ left, top });
+}
+function openModal(modalEl){
+  if(!modalEl) return;
+  modalEl.classList.add('is-open');
+  window.requestAnimationFrame(()=>centerModal(modalEl));
+}
+function closeModal(modalEl){
+  if(!modalEl) return;
+  modalEl.classList.remove('is-open');
+}
+function makeModalDraggable(modalEl){
+  const card=getModalCard(modalEl);
+  const head=getModalHead(modalEl);
+  if(!modalEl || !card || !head) return;
+  let dragging=false;
+  let startX=0, startY=0, startLeft=0, startTop=0;
+  head.addEventListener('pointerdown',(e)=>{
+    if(e.button!==0) return;
+    if(!modalEl.classList.contains('is-open')) return;
+    if(e.target && e.target.closest && e.target.closest('button,input,select,textarea,a')) return;
+    dragging=true;
+    const rect=modalEl.getBoundingClientRect();
+    const cardRect=card.getBoundingClientRect();
+    startX=e.clientX;
+    startY=e.clientY;
+    startLeft=cardRect.left-rect.left;
+    startTop=cardRect.top-rect.top;
+    head.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  head.addEventListener('pointermove',(e)=>{
+    if(!dragging) return;
+    const dx=e.clientX-startX;
+    const dy=e.clientY-startY;
+    const mw=modalEl.clientWidth;
+    const mh=modalEl.clientHeight;
+    const cw=card.offsetWidth;
+    const ch=card.offsetHeight;
+    const left=clamp(Math.round(startLeft+dx),8,Math.max(8,mw-cw-8));
+    const top=clamp(Math.round(startTop+dy),8,Math.max(8,mh-ch-8));
+    card.style.left=`${left}px`;
+    card.style.top=`${top}px`;
+    const key=modalEl.id || 'modal';
+    modalPositions.set(key,{ left, top });
+  });
+  function endDrag(e){
+    if(!dragging) return;
+    dragging=false;
+    try{ head.releasePointerCapture(e.pointerId); }catch{}
+  }
+  head.addEventListener('pointerup',endDrag);
+  head.addEventListener('pointercancel',endDrag);
+}
+makeModalDraggable(aboutModalEl);
 function openAbout(){
   if(!aboutModalEl) return;
-  aboutModalEl.classList.add('is-open');
+  openModal(aboutModalEl);
 }
 function closeAbout(){
   if(!aboutModalEl) return;
-  aboutModalEl.classList.remove('is-open');
+  closeModal(aboutModalEl);
 }
 if(aboutBtnEl) aboutBtnEl.addEventListener('click',openAbout);
 if(aboutCloseEl) aboutCloseEl.addEventListener('click',closeAbout);
@@ -1414,18 +1770,51 @@ const animCloseEl=document.getElementById('animClose');
 const animFrameListEl=document.getElementById('animFrameList');
 const animNewFrameEl=document.getElementById('animNewFrame');
 const animDeleteFrameEl=document.getElementById('animDeleteFrame');
+const animMultiSelectEl=document.getElementById('animMultiSelect');
 const animDelayEl=document.getElementById('animDelay');
 const animPlayEl=document.getElementById('animPlay');
+const animPlayCloseEl=document.getElementById('animPlayClose');
+const animApplyAllDelayEl=document.getElementById('animApplyAllDelay');
+const animExportGifEl=document.getElementById('animExportGif');
+let animMultiSelectMode=false;
 let timeline=[{ frames:[frames[0],frames[1],frames[2],frames[3]], delay:360 }];
 let timelineIndex=0;
-let timelinePlaying=false;
 let timelineToken=0;
+let timelineAnchor=0;
+let timelineSelected=new Set([0]);
+let animJustDraggedUntil=0;
+let animDrag=null;
+makeModalDraggable(animModalEl);
 function applyTimelineFrame(i){
   const t=timeline[i];
   if(!t) return;
   for(let fi=0;fi<4;fi++){
     frames[fi]=t.frames[fi];
   }
+}
+function moveTimelineFrameInsert(from,insertIndex){
+  const len=timeline.length;
+  const a=from|0;
+  const b=insertIndex|0;
+  if(a<0 || a>=len) return;
+  const nextLen=len-1;
+  const finalIndex=clamp(b,0,nextLen);
+  if(finalIndex===a) return;
+  const [item]=timeline.splice(a,1);
+  timeline.splice(finalIndex,0,item);
+  const remap=(idx)=>{
+    if(idx===a) return finalIndex;
+    if(a<finalIndex && a<idx && idx<=finalIndex) return idx-1;
+    if(finalIndex<a && finalIndex<=idx && idx<a) return idx+1;
+    return idx;
+  };
+  timelineIndex=remap(timelineIndex);
+  timelineAnchor=remap(timelineAnchor);
+  const nextSelected=new Set();
+  for(const s of timelineSelected){
+    nextSelected.add(remap(s));
+  }
+  timelineSelected=nextSelected;
 }
 function setTimelineIndex(i){
   const next=Math.max(0,Math.min(timeline.length-1,i|0));
@@ -1449,10 +1838,35 @@ function rebuildAnimFrameList(){
   for(let i=0;i<timeline.length;i++){
     const btn=document.createElement('button');
     btn.type='button';
-    btn.className='anim-frame-btn'+(i===timelineIndex?' is-active':'');
+    btn.dataset.index=String(i);
+    const active=i===timelineIndex;
+    const selected=timelineSelected.has(i);
+    btn.className='anim-frame-btn'+(active?' is-active':'')+(selected?' is-selected':'');
     btn.textContent=String(i+1);
-    btn.addEventListener('click',()=>{
+    btn.title=`第 ${i+1} 帧（${Math.max(30,timeline[i]?.delay|0)}ms）`;
+    btn.addEventListener('click',(e)=>{
+      if(Date.now()<animJustDraggedUntil) return;
       if(timelinePlaying) return;
+      const isMac=navigator.platform.toLowerCase().includes('mac');
+      const multiKey=isMac ? e.metaKey : e.ctrlKey;
+      if(e.shiftKey){
+        const a=clamp(timelineAnchor,0,timeline.length-1);
+        const b=i;
+        const lo=Math.min(a,b), hi=Math.max(a,b);
+        const next=new Set();
+        for(let k=lo;k<=hi;k++) next.add(k);
+        timelineSelected=next;
+      }else if(animMultiSelectMode || multiKey){
+        const next=new Set(timelineSelected);
+        if(next.has(i)) next.delete(i);
+        else next.add(i);
+        if(next.size===0) next.add(i);
+        timelineSelected=next;
+        timelineAnchor=i;
+      }else{
+        timelineAnchor=i;
+        timelineSelected=new Set([i]);
+      }
       setTimelineIndex(i);
     });
     animFrameListEl.appendChild(btn);
@@ -1460,27 +1874,54 @@ function rebuildAnimFrameList(){
 }
 function syncAnimUI(){
   rebuildAnimFrameList();
-  const cur=timeline[timelineIndex];
-  if(animDelayEl && cur) animDelayEl.value=String(cur.delay|0);
+  const selected=[...timelineSelected].filter(i=>i>=0 && i<timeline.length);
+  const delays=selected.map(i=>Math.max(30,timeline[i]?.delay|0));
+  const uniform=delays.length>0 && delays.every(x=>x===delays[0]);
+  if(animDelayEl){
+    if(delays.length===0){
+      animDelayEl.value='';
+    }else if(uniform){
+      animDelayEl.value=String(delays[0]);
+      animDelayEl.placeholder='';
+    }else{
+      animDelayEl.value='';
+      animDelayEl.placeholder='—';
+    }
+  }
   const disable=timelinePlaying;
   if(animNewFrameEl) animNewFrameEl.disabled=disable;
-  if(animDeleteFrameEl) animDeleteFrameEl.disabled=disable || timeline.length<=1;
+  if(animDeleteFrameEl) animDeleteFrameEl.disabled=disable || timeline.length<=1 || timelineSelected.size===0;
   if(animDelayEl) animDelayEl.disabled=disable;
   if(animPlayEl) animPlayEl.textContent=timelinePlaying?'停止':'播放';
+  if(animPlayCloseEl) animPlayCloseEl.disabled=disable;
+  if(animApplyAllDelayEl) animApplyAllDelayEl.disabled=disable;
+  if(animExportGifEl) animExportGifEl.disabled=disable;
+  if(animMultiSelectEl){
+    animMultiSelectEl.disabled=disable;
+    animMultiSelectEl.classList.toggle('is-active',animMultiSelectMode);
+  }
 }
 function openAnim(){
   if(!animModalEl) return;
+  stopTimelinePlayback();
   stopAnim();
   displayFrame=3;
   renderCurrent();
-  animModalEl.classList.add('is-open');
+  openModal(animModalEl);
+  if(timelineSelected.size===0) timelineSelected=new Set([timelineIndex]);
+  timelineAnchor=timelineIndex;
   syncAnimUI();
 }
-function closeAnim(){
+function closeAnim(options){
   if(!animModalEl) return;
-  stopTimelinePlayback();
-  animModalEl.classList.remove('is-open');
-  applyPlaybackMode();
+  const stopPlayback=options?.stopPlayback!==false;
+  if(stopPlayback){
+    stopTimelinePlayback();
+    closeModal(animModalEl);
+    applyPlaybackMode();
+  }else{
+    closeModal(animModalEl);
+  }
 }
 function stopTimelinePlayback(){
   timelinePlaying=false;
@@ -1493,37 +1934,35 @@ function startTimelinePlayback(){
   timelinePlaying=true;
   const token=++timelineToken;
   syncAnimUI();
-  const step=()=>{
+  const playCel=()=>{
     if(!timelinePlaying || token!==timelineToken) return;
     const cel=timeline[timelineIndex];
     if(!cel){ stopTimelinePlayback(); return; }
-    const total=Math.max(30,cel.delay|0);
-    const d1=Math.max(20,Math.floor(total/3));
-    const d2=Math.max(20,Math.floor(total/3));
-    const d3=Math.max(20,total-d1-d2);
-    const delays=[d1,d2,d3];
+    let remaining=Math.max(30,cel.delay|0);
     let sub=0;
-    const stepSub=()=>{
+    const tick=()=>{
       if(!timelinePlaying || token!==timelineToken) return;
       displayFrame=sub;
       renderCurrent();
-      const wait=delays[sub] ?? 120;
-      sub++;
-      if(sub<3){
-        window.setTimeout(stepSub,wait);
+      const base=getJitterSubDelayMs(sub);
+      const wait=Math.min(base,remaining);
+      remaining-=wait;
+      if(remaining>0){
+        sub=(sub+1)%3;
+        window.setTimeout(tick,wait);
       }else{
         timelineIndex=(timelineIndex+1)%timeline.length;
         applyTimelineFrame(timelineIndex);
         syncAnimUI();
-        window.setTimeout(()=>{ sub=0; stepSub(); },0);
+        window.setTimeout(playCel,wait);
       }
     };
-    stepSub();
+    tick();
   };
-  step();
+  playCel();
 }
 if(animBtnEl) animBtnEl.addEventListener('click',openAnim);
-if(animCloseEl) animCloseEl.addEventListener('click',closeAnim);
+if(animCloseEl) animCloseEl.addEventListener('click',()=>closeAnim());
 if(animModalEl){
   animModalEl.addEventListener('mousedown',(e)=>{
     if(e.target===animModalEl) closeAnim();
@@ -1532,12 +1971,194 @@ if(animModalEl){
 window.addEventListener('keydown',(e)=>{
   if(e.key==='Escape' && animModalEl && animModalEl.classList.contains('is-open')) closeAnim();
 });
+if(animFrameListEl){
+  function animGetInsertIndex(clientX,clientY){
+    const buttons=[...animFrameListEl.querySelectorAll('.anim-frame-btn')];
+    if(buttons.length===0) return 0;
+    const items=buttons.map((el,i)=>{
+      const r=el.getBoundingClientRect();
+      return { el, i, left:r.left, right:r.right, top:r.top, bottom:r.bottom, cx:r.left+r.width/2, cy:r.top+r.height/2 };
+    }).sort((a,b)=> (a.top-b.top) || (a.left-b.left) || (a.i-b.i));
+    const rows=[];
+    const rowTol=10;
+    for(const it of items){
+      const last=rows[rows.length-1];
+      if(!last || Math.abs(it.top-last.top)>rowTol){
+        rows.push({ top: it.top, bottom: it.bottom, items:[it] });
+      }else{
+        last.items.push(it);
+        last.bottom=Math.max(last.bottom,it.bottom);
+        last.top=Math.min(last.top,it.top);
+      }
+    }
+    for(const row of rows){
+      row.items.sort((a,b)=>a.left-b.left);
+    }
+    let rowIndex=0;
+    let bestRowDist=Infinity;
+    for(let r=0;r<rows.length;r++){
+      const row=rows[r];
+      const cy=(row.top+row.bottom)/2;
+      const dy=Math.abs(clientY-cy);
+      if(dy<bestRowDist){
+        bestRowDist=dy;
+        rowIndex=r;
+      }
+    }
+    const row=rows[rowIndex];
+    let within=0;
+    if(row.items.length>0){
+      let pos=row.items.length;
+      for(let k=0;k<row.items.length;k++){
+        const it=row.items[k];
+        const before=clientX < it.cx;
+        if(before){ pos=k; break; }
+      }
+      within=clamp(pos,0,row.items.length);
+    }
+    let base=0;
+    for(let r=0;r<rowIndex;r++) base+=rows[r].items.length;
+    return clamp(base+within,0,buttons.length);
+  }
+  function animPlacePlaceholder(index){
+    if(!animDrag || !animDrag.placeholderEl) return;
+    const placeholder=animDrag.placeholderEl;
+    const buttons=[...animFrameListEl.querySelectorAll('.anim-frame-btn')];
+    if(index>=buttons.length) animFrameListEl.appendChild(placeholder);
+    else animFrameListEl.insertBefore(placeholder,buttons[index]);
+  }
+  function animStartDrag(e,btn,fromIndex){
+    if(timelinePlaying) return;
+    if(animDrag && animDrag.active) return;
+    const rect=btn.getBoundingClientRect();
+    const placeholder=document.createElement('div');
+    placeholder.className='anim-frame-placeholder';
+    btn.parentNode.insertBefore(placeholder,btn);
+    const ghost=btn.cloneNode(true);
+    ghost.classList.add('is-dragging');
+    ghost.style.position='fixed';
+    ghost.style.left=`${rect.left}px`;
+    ghost.style.top=`${rect.top}px`;
+    ghost.style.width=`${rect.width}px`;
+    ghost.style.height=`${rect.height}px`;
+    ghost.style.zIndex='10000';
+    ghost.style.pointerEvents='none';
+    ghost.style.margin='0';
+    document.body.appendChild(ghost);
+    btn.remove();
+    animDrag={
+      pointerId: e.pointerId,
+      fromIndex,
+      placeholderEl: placeholder,
+      ghostEl: ghost,
+      offsetX: e.clientX-rect.left,
+      offsetY: e.clientY-rect.top,
+      active: true,
+    };
+    animFrameListEl.setPointerCapture(e.pointerId);
+    animJustDraggedUntil=Date.now()+250;
+    e.preventDefault();
+  }
+  function animFinishDrag(e,cancelled){
+    if(!animDrag || animDrag.pointerId!==e.pointerId) return;
+    const fromIndex=animDrag.fromIndex;
+    const placeholder=animDrag.placeholderEl;
+    const ghost=animDrag.ghostEl;
+    let insertIndex=0;
+    for(const child of animFrameListEl.children){
+      if(child===placeholder) break;
+      if(child.classList && child.classList.contains('anim-frame-btn')) insertIndex++;
+    }
+    animDrag=null;
+    try{ animFrameListEl.releasePointerCapture(e.pointerId); }catch{}
+    if(ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+    if(placeholder && placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+    if(!cancelled){
+      moveTimelineFrameInsert(fromIndex,insertIndex);
+    }
+    syncAnimUI();
+  }
+  animFrameListEl.addEventListener('pointerdown',(e)=>{
+    if(timelinePlaying) return;
+    const btn=e.target.closest('.anim-frame-btn');
+    if(!btn) return;
+    const idx=Number(btn.dataset.index);
+    if(!Number.isFinite(idx)) return;
+    const pointerId=e.pointerId;
+    const startX=e.clientX;
+    const startY=e.clientY;
+    let started=false;
+    let timerId=0;
+    if(e.pointerType==='touch'){
+      timerId=window.setTimeout(()=>{
+        if(started) return;
+        started=true;
+        animStartDrag(e,btn,idx);
+      },220);
+    }
+    function onMove(ev){
+      if(ev.pointerId!==pointerId) return;
+      if(timelinePlaying) return;
+      if(!started){
+        const dx=ev.clientX-startX;
+        const dy=ev.clientY-startY;
+        if(Math.hypot(dx,dy)>=6){
+          started=true;
+          if(timerId) window.clearTimeout(timerId);
+          animStartDrag(ev,btn,idx);
+        }
+        return;
+      }
+      if(!animDrag || animDrag.pointerId!==pointerId) return;
+      const ghost=animDrag.ghostEl;
+      if(ghost){
+        ghost.style.left=`${ev.clientX-animDrag.offsetX}px`;
+        ghost.style.top=`${ev.clientY-animDrag.offsetY}px`;
+      }
+      animPlacePlaceholder(animGetInsertIndex(ev.clientX,ev.clientY));
+    }
+    function cleanup(){
+      if(timerId) window.clearTimeout(timerId);
+      window.removeEventListener('pointermove',onMove,true);
+      window.removeEventListener('pointerup',onUp,true);
+      window.removeEventListener('pointercancel',onCancel,true);
+    }
+    function onUp(ev){
+      if(ev.pointerId!==pointerId) return;
+      cleanup();
+      if(started) animFinishDrag(ev,false);
+    }
+    function onCancel(ev){
+      if(ev.pointerId!==pointerId) return;
+      cleanup();
+      if(started) animFinishDrag(ev,true);
+    }
+    window.addEventListener('pointermove',onMove,true);
+    window.addEventListener('pointerup',onUp,true);
+    window.addEventListener('pointercancel',onCancel,true);
+  });
+}
+if(animMultiSelectEl){
+  animMultiSelectEl.addEventListener('click',()=>{
+    if(timelinePlaying) return;
+    animMultiSelectMode=!animMultiSelectMode;
+    if(!animMultiSelectMode){
+      timelineSelected=new Set([timelineIndex]);
+      timelineAnchor=timelineIndex;
+    }else{
+      if(timelineSelected.size===0) timelineSelected=new Set([timelineIndex]);
+    }
+    syncAnimUI();
+  });
+}
 if(animNewFrameEl){
   animNewFrameEl.addEventListener('click',()=>{
     if(timelinePlaying) return;
     const cur=timeline[timelineIndex];
     const next=cur ? cloneTimelineFrame(cur) : { frames:[new Uint8Array(W*H),new Uint8Array(W*H),new Uint8Array(W*H),new Uint8Array(W*H)], delay:360 };
     timeline.splice(timelineIndex+1,0,next);
+    timelineAnchor=timelineIndex+1;
+    timelineSelected=new Set([timelineIndex+1]);
     setTimelineIndex(timelineIndex+1);
   });
 }
@@ -1545,23 +2166,102 @@ if(animDeleteFrameEl){
   animDeleteFrameEl.addEventListener('click',()=>{
     if(timelinePlaying) return;
     if(timeline.length<=1) return;
-    timeline.splice(timelineIndex,1);
-    setTimelineIndex(Math.min(timelineIndex,timeline.length-1));
+    let toDelete=[...timelineSelected].filter(i=>i>=0 && i<timeline.length).sort((a,b)=>b-a);
+    if(toDelete.length===0) toDelete=[timelineIndex];
+    if(toDelete.length>=timeline.length){
+      toDelete=toDelete.slice(0,timeline.length-1);
+    }
+    for(const i of toDelete){
+      timeline.splice(i,1);
+      const nextSelected=new Set();
+      for(const s of timelineSelected){
+        if(s===i) continue;
+        nextSelected.add(s>i?s-1:s);
+      }
+      timelineSelected=nextSelected;
+      if(timelineIndex===i) timelineIndex=Math.max(0,Math.min(timelineIndex,timeline.length-1));
+      else if(timelineIndex>i) timelineIndex--;
+    }
+    if(timelineSelected.size===0) timelineSelected=new Set([timelineIndex]);
+    timelineAnchor=timelineIndex;
+    setTimelineIndex(timelineIndex);
   });
 }
 if(animDelayEl){
   animDelayEl.addEventListener('change',()=>{
-    const cur=timeline[timelineIndex];
-    if(!cur) return;
     const v=Math.max(30,Number(animDelayEl.value)||0);
-    cur.delay=v;
+    const targets=[...timelineSelected].filter(i=>i>=0 && i<timeline.length);
+    if(targets.length===0) targets.push(timelineIndex);
+    for(const i of targets){
+      const cur=timeline[i];
+      if(cur) cur.delay=v;
+    }
     syncAnimUI();
+  });
+}
+if(animApplyAllDelayEl){
+  animApplyAllDelayEl.addEventListener('click',()=>{
+    const v=Math.max(30,Number(animDelayEl && animDelayEl.value)||0);
+    if(!v) return;
+    for(const cel of timeline){
+      cel.delay=v;
+    }
+    syncAnimUI();
+  });
+}
+function exportAnimGif(){
+  const transparent=toggleTransparent && toggleTransparent.checked;
+  const palette=[];
+  for(let i=0;i<=MAX_COLOR_INDEX;i++) palette[i]=hexToRGB(colorMap[i] ?? '#000000');
+  const gif=GIFEncoder({ repeat: 0 });
+  for(const cel of timeline){
+    let remaining=Math.max(30,cel.delay|0);
+    while(remaining>0){
+      for(let sub=0;sub<3 && remaining>0;sub++){
+        const dt=Math.min(getJitterSubDelayMs(sub),remaining);
+        const indicesRaw=cel.frames[sub];
+        const indices=transparent ? indicesRaw : (()=>{ 
+          const out=new Uint8Array(indicesRaw.length);
+          for(let i=0;i<indicesRaw.length;i++){
+            const v=indicesRaw[i];
+            out[i]=v===0?1:v;
+          }
+          return out;
+        })();
+        const options={ palette, delay: dt };
+        if(transparent) options.transparent=0;
+        gif.writeFrame(indices,W,H,options);
+        remaining-=dt;
+      }
+    }
+  }
+  gif.finish();
+  const gifBytes=gif.bytes();
+  const blob=new Blob([gifBytes],{type:'image/gif'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='anim.gif';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+if(animExportGifEl){
+  animExportGifEl.addEventListener('click',()=>{
+    exportAnimGif();
   });
 }
 if(animPlayEl){
   animPlayEl.addEventListener('click',()=>{
     if(timelinePlaying) stopTimelinePlayback();
     else startTimelinePlayback();
+  });
+}
+if(animPlayCloseEl){
+  animPlayCloseEl.addEventListener('click',()=>{
+    if(!timelinePlaying) startTimelinePlayback();
+    closeAnim({ stopPlayback:false });
   });
 }
 function resampleMaskOR(src,sw,sh,ow,oh){
@@ -1716,6 +2416,7 @@ function applyBackground(){
       checkerboard.style.backgroundPosition='0 0, 8px 8px';
       checkerboard.style.backgroundRepeat='repeat';
     }
+    updateCheckerboardScale();
   }else{
     checkerboard.style.backgroundImage='none';
   }
