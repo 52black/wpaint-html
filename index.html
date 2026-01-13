@@ -1,0 +1,1055 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>绘制页面</title>
+<style>
+html,body { height: 100%; }
+body { margin: 0; background: #000; display: grid; place-items: center; }
+.container { width: 512px; height: 342px; position: relative; background: #fff; overflow: hidden; }
+.canvas { position: absolute; top: 0; left: 0; width: 360px; height: 265px; border: 1px solid #ccc; background: transparent; z-index: 2; }
+.tool-btn { position: absolute; z-index: 2; padding: 6px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 10px; background: rgba(255,255,255,.92); color: #111; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); backdrop-filter: blur(6px); }
+.tool-btn:hover { background: rgba(255,255,255,.98); }
+.tool-btn:active { transform: translateY(1px); }
+.tool-btn.is-active { background: rgba(17,17,17,.92); color: #fff; border-color: rgba(0,0,0,.25); }
+.tool-btn.is-active:hover { background: rgba(17,17,17,.98); }
+.tool-pen { top: 8px; right: 8px; }
+.tool-pen2 { top: 46px; right: 8px; }
+.tool-clear { top: 84px; right: 8px; }
+.tool-export { top: 122px; right: 8px; }
+.tool-importgif { top: 160px; right: 8px; }
+.tool-importbg { top: 198px; right: 8px; }
+.tool-advanced { top: 236px; right: 8px; }
+.tool-eraser { bottom: 8px; right: 8px; }
+.tool-color { bottom: 8px; left: 8px; }
+.tool-btn svg { width: 18px; height: 18px; display: block; }
+.tool-btn .btn-icon { display: inline-flex; align-items: center; justify-content: center; }
+.tool-btn.tool-pen, .tool-btn.tool-pen2, .tool-btn.tool-eraser { width: 40px; height: 32px; padding: 0; display: grid; place-items: center; }
+.overlay { position: absolute; inset: 0; background: rgba(245,245,245,.96); display: none; flex-direction: column; padding: 12px; box-sizing: border-box; z-index: 3; }
+.container.color-mode .tool-btn { display: none; }
+.container.color-mode .jitter-panel { display: none !important; }
+.container.color-mode .canvas { display: none; }
+.container.color-mode .checkerboard { display: none; }
+.jitter-panel { position: absolute; top: 8px; left: 8px; z-index: 4; display: none; grid-template-rows: auto auto; gap: 8px; padding: 8px 10px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.86); font-size: 12px; }
+.container.advanced .jitter-panel { display: grid; }
+.jitter-panel .row { display: flex; align-items: center; gap: 8px; }
+.jitter-panel .label { opacity: .8; }
+.jitter-panel input[type="range"] { accent-color: #111; }
+.jitter-panel input:disabled { opacity: .5; }
+.jitter-panel select { height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.9); padding: 0 8px; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,.10); background: rgba(255,255,255,.85); user-select: none; }
+.toggle input[type="checkbox"] { width: 34px; height: 18px; appearance: none; -webkit-appearance: none; border-radius: 999px; background: rgba(0,0,0,.15); position: relative; outline: none; cursor: pointer; transition: background .15s ease; }
+.toggle input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 999px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); transition: transform .15s ease; }
+.toggle input[type="checkbox"]:checked { background: rgba(17,17,17,.9); }
+.toggle input[type="checkbox"]:checked::after { transform: translateX(16px); }
+.toggle span { line-height: 1; }
+.range { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,.10); background: rgba(255,255,255,.85); }
+.range input[type="range"] { width: 140px; accent-color: #111; }
+.pill { min-width: 22px; text-align: center; padding: 2px 8px; border-radius: 999px; background: rgba(17,17,17,.92); color: #fff; font-variant-numeric: tabular-nums; }
+.action-btn { padding: 6px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 10px; background: rgba(255,255,255,.92); color: #111; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+.action-btn:hover { background: rgba(255,255,255,.98); }
+.action-btn:active { transform: translateY(1px); }
+.checkerboard { position: absolute; top: 0; left: 0; width: 360px; height: 265px; z-index: 1; display: none;
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+.palette-panel { position: absolute; left: 76px; bottom: 8px; z-index: 2; display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; width: 280px; }
+.pattern-picker { position: absolute; right: 56px; top: 270px; z-index: 3; }
+.container.color-mode .pattern-picker { display: none; }
+.pattern-select { width: 88px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.15); background: rgba(255,255,255,.92); padding: 0 10px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+.pattern-select:active { transform: translateY(1px); }
+.pattern-select .thumb { width: 18px; height: 18px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.7); image-rendering: pixelated; }
+.pattern-popover { position: absolute; left: 0; bottom: 34px; width: 292px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 10px 28px rgba(0,0,0,.16); padding: 10px; display: none; box-sizing: border-box; }
+.pattern-popover.is-open { display: block; }
+.pattern-popover { max-height: 240px; overflow: auto; }
+.pattern-list { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.pattern-item { height: 34px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.8); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.pattern-item.is-active { background: rgba(17,17,17,.92); border-color: rgba(0,0,0,.25); }
+.pattern-item canvas { width: 22px; height: 22px; image-rendering: pixelated; }
+.pattern-item .label { font-size: 10px; opacity: .85; }
+.pattern-stage { margin-top: 10px; display: grid; gap: 8px; }
+.pattern-edit { display: none; gap: 10px; align-items: center; }
+.pattern-edit.is-visible { display: flex; }
+.pattern-preview { width: 92px; height: 92px; border-radius: 12px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.8); display: grid; place-items: center; }
+.pattern-preview canvas { width: 80px; height: 80px; image-rendering: pixelated; }
+.pattern-stage .row { display: flex; align-items: center; gap: 8px; }
+.palette-btn { width: 28px; height: 28px; border-radius: 10px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.92); cursor: pointer; display: grid; place-items: center; padding: 0; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+.palette-btn:active { transform: translateY(1px); }
+.palette-btn.is-active { background: rgba(17,17,17,.92); border-color: rgba(0,0,0,.25); }
+.palette-btn svg { width: 16px; height: 16px; }
+.palette-btn .swatch { width: 8px; height: 8px; border-radius: 999px; border: 1px solid rgba(0,0,0,.18); position: absolute; transform: translate(-3px, 12px); }
+.palette-btn .wrap { position: relative; width: 16px; height: 16px; }
+.color-layout { display: grid; grid-template-columns: 160px 1fr; gap: 12px; flex: 1; min-height: 0; }
+.color-side { display: grid; gap: 10px; }
+.card { border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.88); padding: 10px; }
+.color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.color-cell { display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid rgba(0,0,0,.10); border-radius: 12px; background: rgba(255,255,255,.75); }
+.color-cell input[type="color"] { width: 100%; height: 28px; border: 0; padding: 0; background: transparent; }
+.role { font-size: 10px; opacity: .7; }
+.color-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.color-header strong { font-size: 14px; }
+.color-actions { display: flex; align-items: center; gap: 10px; }
+.outline-colors { display: none; gap: 8px; align-items: center; margin-bottom: 10px; }
+.outline-colors .mini { width: 56px; height: 44px; border-radius: 12px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.9); padding: 6px; box-sizing: border-box; display: grid; grid-template-rows: 16px 1fr; align-items: center; gap: 4px; }
+.outline-colors .mini input[type="color"] { width: 100%; height: 22px; border: 0; padding: 0; background: transparent; }
+.outline-colors .mini svg { width: 16px; height: 16px; opacity: .85; }
+.preview-wrap { width: 152px; height: 112px; border: 1px solid rgba(0,0,0,.12); border-radius: 10px; overflow: hidden; }
+.preview-bg { width: 100%; height: 100%; display: grid; place-items: center; }
+.preview-canvas { width: 152px; height: 112px; image-rendering: pixelated; }
+</style>
+</head>
+<body>
+<div class="container">
+<button id="pen" class="tool-btn tool-pen" title="铅笔" aria-label="铅笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span></button>
+<button id="pen2" class="tool-btn tool-pen2" title="钢笔" aria-label="钢笔"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></span></button>
+<button id="clear" class="tool-btn tool-clear">清空</button>
+<button id="exportGif" class="tool-btn tool-export">导出GIF</button>
+<button id="importGif" class="tool-btn tool-importgif">导入GIF</button>
+<button id="importBg" class="tool-btn tool-importbg">导入背景</button>
+<button id="advanced" class="tool-btn tool-advanced">高级</button>
+<button id="eraser" class="tool-btn tool-eraser" title="橡皮擦" aria-label="橡皮擦"><span class="btn-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19H4a2 2 0 0 1-2-2v-1l11.5-12.5Z"/></svg></span></button>
+<button id="switchColor" class="tool-btn tool-color">换色</button>
+<div class="jitter-panel">
+  <div class="row">
+    <label class="toggle"><input id="jitterOn" type="checkbox" checked><span>抖动</span></label>
+    <div class="range">
+      <input id="jitter" type="range" min="0" max="10" step="1" value="1">
+      <span id="jitterValue" class="pill">1</span>
+    </div>
+  </div>
+  <div class="row">
+    <span class="label">粗细</span>
+    <div class="range">
+      <input id="size" type="range" min="1" max="31" step="1" value="1">
+      <span id="sizeValue" class="pill">1</span>
+    </div>
+  </div>
+</div>
+<input id="patternFile" type="file" accept="image/*" style="display:none">
+<input id="gifFile" type="file" accept="image/gif" style="display:none">
+<input id="bgFile" type="file" accept="image/*" style="display:none">
+<div id="paletteTools" class="palette-panel" aria-label="16色调色板笔"></div>
+<div class="pattern-picker" aria-label="图案设置">
+  <button id="patternSelect" type="button" class="pattern-select" aria-haspopup="dialog" aria-expanded="false">
+    <canvas id="patternThumb" class="thumb" width="18" height="18"></canvas>
+    <span id="patternSelectLabel">默认图案</span>
+  </button>
+  <div id="patternPopover" class="pattern-popover" role="dialog" aria-label="图案选择">
+    <div id="patternList" class="pattern-list" aria-label="图案列表"></div>
+    <div id="patternStage" class="pattern-stage" aria-label="图案编辑">
+      <div class="row">
+        <button id="patternUpload" type="button" class="action-btn">上传图案</button>
+      </div>
+      <div id="patternEdit" class="pattern-edit">
+        <div class="pattern-preview"><canvas id="patternPreview" width="32" height="32"></canvas></div>
+        <div style="display:grid;gap:8px;">
+          <button id="patternInvert" type="button" class="action-btn">反色</button>
+          <button id="patternConfirm" type="button" class="action-btn">确定</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="checkerboard" class="checkerboard"></div>
+<canvas id="drawing" class="canvas" width="360" height="265"></canvas>
+<div id="colorPage" class="overlay">
+  <div class="color-header">
+    <span></span>
+    <div class="color-actions">
+      <label class="toggle"><input type="checkbox" id="toggleTransparent"><span>透明背景</span></label>
+      <label class="toggle"><input id="separateOutline" type="checkbox"><span>区分勾线笔颜色</span></label>
+      <button id="back" class="action-btn">返回绘制</button>
+    </div>
+  </div>
+  <div id="outlineColors" class="outline-colors">
+    <div class="mini" title="铅笔">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      <input type="color" data-index="17">
+    </div>
+    <div class="mini" title="钢笔">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+      <input type="color" data-index="18">
+    </div>
+  </div>
+  <div class="color-layout">
+    <div class="color-side">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <span>预览</span>
+        </div>
+        <div class="preview-wrap">
+          <div id="previewBg" class="preview-bg">
+            <canvas id="preview" class="preview-canvas" width="152" height="112"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="color-grid">
+        <div class="color-cell"><span class="role">背景色</span><input type="color" data-index="1"></div>
+        <div class="color-cell"><span class="role">前景色</span><input type="color" data-index="2"></div>
+        <div class="color-cell"><input type="color" data-index="3"></div>
+        <div class="color-cell"><input type="color" data-index="4"></div>
+        <div class="color-cell"><input type="color" data-index="5"></div>
+        <div class="color-cell"><input type="color" data-index="6"></div>
+        <div class="color-cell"><input type="color" data-index="7"></div>
+        <div class="color-cell"><input type="color" data-index="8"></div>
+        <div class="color-cell"><input type="color" data-index="9"></div>
+        <div class="color-cell"><input type="color" data-index="10"></div>
+        <div class="color-cell"><input type="color" data-index="11"></div>
+        <div class="color-cell"><input type="color" data-index="12"></div>
+        <div class="color-cell"><input type="color" data-index="13"></div>
+        <div class="color-cell"><input type="color" data-index="14"></div>
+        <div class="color-cell"><input type="color" data-index="15"></div>
+        <div class="color-cell"><input type="color" data-index="16"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<script type="module">
+import { GIFEncoder } from 'https://unpkg.com/gifenc@1.0.3';
+import { parseGIF, decompressFrames } from 'https://esm.sh/gifuct-js@2.1.2';
+// ===== 画布/数据模型 =====
+// 为了实现“沸腾抖动”的播放效果，这里用 4 帧像素数据来表示同一张画：
+// - 帧 0/1/2：抖动模式下循环播放（会对每段新线条端点做随机偏移）
+// - 帧 3：稳定帧（不抖动），用于非抖动显示与换色界面预览
+// 每个像素存的是 0~16 的“颜色值”，渲染时再用颜色映射表把它变成真正的颜色。
+// 约定：0 是“透明/橡皮擦”，不参与换色；1~16 才是可换色的调色板。
+const canvas=document.getElementById('drawing');
+const ctx=canvas.getContext('2d');
+const W=canvas.width,H=canvas.height;
+const MAX_COLOR_INDEX=18;
+const BASE_COLOR_COUNT=16;
+const frames=[
+  new Uint8Array(W*H),
+  new Uint8Array(W*H),
+  new Uint8Array(W*H),
+  new Uint8Array(W*H),
+];
+// 颜色映射：值 0~16 -> 颜色
+// 约定：值 1 为背景色，值 2 为前景色（第一只笔）
+const defaultColors=['#000000','#ffffff','#000000','#00ff00','#0000ff','#ffff00','#ff00ff','#00ffff','#888888','#444444','#ffa500','#800080','#008000','#000080','#808000','#800000','#ff0000','#000000','#000000'];
+const colorMap=defaultColors.slice();
+let currentTool='pencil';
+let paletteValue=2;
+let jitterLevel=0;
+let displayFrame=3;
+let animId=null;
+let drawing=false;
+let last=null;
+const penBtn=document.getElementById('pen');
+const pen2Btn=document.getElementById('pen2');
+const eraserBtn=document.getElementById('eraser');
+const clearBtn=document.getElementById('clear');
+const exportGifBtn=document.getElementById('exportGif');
+const importGifBtn=document.getElementById('importGif');
+const importBgBtn=document.getElementById('importBg');
+const advancedBtn=document.getElementById('advanced');
+const separateOutlineEl=document.getElementById('separateOutline');
+const outlineColorsEl=document.getElementById('outlineColors');
+const paletteToolsEl=document.getElementById('paletteTools');
+const patternPickerEl=document.querySelector('.pattern-picker');
+const patternSelectBtn=document.getElementById('patternSelect');
+const patternSelectLabelEl=document.getElementById('patternSelectLabel');
+const patternThumbCanvas=document.getElementById('patternThumb');
+const patternThumbCtx=patternThumbCanvas.getContext('2d');
+patternThumbCtx.imageSmoothingEnabled=false;
+const patternPopoverEl=document.getElementById('patternPopover');
+const patternListEl=document.getElementById('patternList');
+const patternEditEl=document.getElementById('patternEdit');
+const patternPreviewCanvas=document.getElementById('patternPreview');
+const patternPreviewCtx=patternPreviewCanvas.getContext('2d');
+patternPreviewCtx.imageSmoothingEnabled=false;
+const patternUploadBtn=document.getElementById('patternUpload');
+const patternInvertBtn=document.getElementById('patternInvert');
+const patternConfirmBtn=document.getElementById('patternConfirm');
+const patternFileEl=document.getElementById('patternFile');
+const gifFileEl=document.getElementById('gifFile');
+const bgFileEl=document.getElementById('bgFile');
+let customBgUrl='';
+const toolSettings={
+  eraser:{ size:11 },
+  pencil:{ size:1 },
+  pen:{ size:3 },
+  palette:{ size:3 },
+};
+const sizeEl=document.getElementById('size');
+const sizeValueEl=document.getElementById('sizeValue');
+function setTool(tool){
+  // 切换当前工具，并同步 UI（激活态/粗细/抖动可用性）
+  currentTool=tool;
+  penBtn.classList.toggle('is-active',tool==='pencil');
+  pen2Btn.classList.toggle('is-active',tool==='pen');
+  eraserBtn.classList.toggle('is-active',tool==='eraser');
+  sizeEl.value=String(toolSettings[tool]?.size ?? 1);
+  sizeValueEl.textContent=String(toolSettings[tool]?.size ?? 1);
+  const erasing=tool==='eraser';
+  jitter.disabled=erasing;
+  jitterValue.style.opacity=erasing?'.5':'1';
+  syncPaletteButtonsActive();
+}
+function getPaintValue(){
+  if(currentTool==='eraser') return 0;
+  if(currentTool==='pencil') return separateOutlineEl.checked ? 17 : 2;
+  if(currentTool==='pen') return separateOutlineEl.checked ? 18 : 2;
+  return paletteValue;
+}
+function getPos(e){
+  // 把鼠标坐标换算到 canvas 像素坐标（避免缩放导致的偏差）
+  const rect=canvas.getBoundingClientRect();
+  const x=Math.round((e.clientX-rect.left)*(canvas.width/rect.width));
+  const y=Math.round((e.clientY-rect.top)*(canvas.height/rect.height));
+  return {x,y};
+}
+function setPixel(frame,x,y,val){
+  if(x<0||y<0||x>=W||y>=H) return;
+  const v=val|0;
+  frame[y*W+x]=(v<0?0:(v>MAX_COLOR_INDEX?MAX_COLOR_INDEX:v));
+}
+function stamp(frame,x,y,val,size){
+  // 把“粗细”转换成一个圆形像素章，盖到当前帧上
+  const r=Math.floor(size/2);
+  if(r<=0){ setPixel(frame,x,y,val); return; }
+  const r2=r*r;
+  for(let dy=-r;dy<=r;dy++){
+    const yy=y+dy;
+    if(yy<0||yy>=H) continue;
+    for(let dx=-r;dx<=r;dx++){
+      if(dx*dx+dy*dy>r2) continue;
+      const xx=x+dx;
+      if(xx<0||xx>=W) continue;
+      setPixel(frame,xx,yy,val);
+    }
+  }
+}
+const PATTERN_W=32;
+const PATTERN_H=32;
+const patterns=[{ id:'default', mask:null }];
+let activePatternId='default';
+let pendingMask32=null;
+let nextPatternId=1;
+function stampPattern(frame,x,y,val,size,brush){
+  const w=brush.w, h=brush.h;
+  const mask=brush.mask;
+  const s=Math.max(1,size|0);
+  const left=x-Math.floor(s/2);
+  const top=y-Math.floor(s/2);
+  for(let oy=0;oy<s;oy++){
+    const my=Math.floor(oy*h/s);
+    for(let ox=0;ox<s;ox++){
+      const mx=Math.floor(ox*w/s);
+      if(mask[my*w+mx]!==1) continue;
+      setPixel(frame,left+ox,top+oy,val);
+    }
+  }
+}
+function getBrushForSize(patternId){
+  if(!patternId || patternId==='default') return null;
+  const p=patterns.find(x=>x.id===patternId);
+  const baseMask=p && p.mask;
+  if(!baseMask) return null;
+  return { w:PATTERN_W, h:PATTERN_H, mask: baseMask };
+}
+function stampPalette(frame,x,y,val,size){
+  const brush=getBrushForSize(activePatternId);
+  if(brush){ stampPattern(frame,x,y,val,size,brush); return; }
+  stamp(frame,x,y,val,size);
+}
+function drawLineValue(frame,a,b,val,size){
+  // 线段离散为很多个像素点，每个点用 stamp 来保证粗细
+  const dx=b.x-a.x,dy=b.y-a.y;
+  const steps=Math.max(Math.abs(dx),Math.abs(dy));
+  if(steps===0){ stamp(frame,a.x,a.y,val,size); return; }
+  for(let i=0;i<=steps;i++){
+    const t=i/steps;
+    const x=Math.round(a.x+t*dx);
+    const y=Math.round(a.y+t*dy);
+    stamp(frame,x,y,val,size);
+  }
+}
+function randOffset(maxAbs){
+  return Math.round((Math.random()*2-1)*maxAbs);
+}
+function jitterPoint(p,maxAbs){
+  // 抖动强度 n => 每个端点随机偏移 [-scale*n, +scale*n] 像素
+  if(!jitterOnEl.checked) return p;
+  if(maxAbs<=0) return p;
+  return {x:p.x+randOffset(maxAbs),y:p.y+randOffset(maxAbs)};
+}
+function hexToRGB(hex){
+  const h=hex.replace('#','');
+  const r=parseInt(h.slice(0,2),16);
+  const g=parseInt(h.slice(2,4),16);
+  const b=parseInt(h.slice(4,6),16);
+  return [r,g,b];
+}
+function render(frame){
+  // 把“颜色值帧”渲染成 RGBA 像素；值 0 代表透明
+  const img=ctx.createImageData(W,H);
+  const data=img.data;
+  for(let i=0;i<frame.length;i++){
+    const val=frame[i];
+    const o=i*4;
+    if(val===0){
+      data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
+    }else{
+      const [r,g,b]=hexToRGB(colorMap[val]);
+      data[o]=r; data[o+1]=g; data[o+2]=b; data[o+3]=255;
+    }
+  }
+  ctx.putImageData(img,0,0);
+}
+const previewCanvas=document.getElementById('preview');
+const previewCtx=previewCanvas.getContext('2d');
+previewCtx.imageSmoothingEnabled=false;
+function renderPreview(){
+  // 换色界面预览固定看“稳定帧” frame3
+  // 直接按预览尺寸采样渲染，避免每次都生成 360x265 的大 ImageData（系统颜色选择器拖动时会卡）
+  const pw=previewCanvas.width, ph=previewCanvas.height;
+  const img=previewCtx.createImageData(pw,ph);
+  const data=img.data;
+  const frame=frames[3];
+  for(let y=0;y<ph;y++){
+    const sy=Math.floor(y*H/ph);
+    for(let x=0;x<pw;x++){
+      const sx=Math.floor(x*W/pw);
+      const val=frame[sy*W+sx];
+      const o=(y*pw+x)*4;
+      if(val===0){
+        data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
+      }else{
+        const [r,g,b]=hexToRGB(colorMap[val]);
+        data[o]=r; data[o+1]=g; data[o+2]=b; data[o+3]=255;
+      }
+    }
+  }
+  previewCtx.putImageData(img,0,0);
+}
+function renderCurrent(){
+  // 换色界面不显示绘画区，跳过大画布渲染，避免调色时卡顿
+  if(!container.classList.contains('color-mode')){
+    render(frames[displayFrame]);
+  }
+  renderPreview();
+}
+function startAnim(){
+  // 抖动开启时循环播放 frame0~2
+  stopAnim();
+  const tick=()=>{
+    displayFrame=(displayFrame+1)%3;
+    renderCurrent();
+    animId=window.setTimeout(tick,120);
+  };
+  animId=window.setTimeout(tick,120);
+}
+function stopAnim(){
+  if(animId!==null){
+    window.clearTimeout(animId);
+    animId=null;
+  }
+}
+function drawSegment(from,to,val){
+  const size=toolSettings[currentTool]?.size ?? 1;
+  const erasing=val===0;
+  if(erasing){
+    for(let fi=0;fi<4;fi++){
+      drawLineValue(frames[fi],from,to,val,size);
+    }
+    return;
+  }
+  const maxAbs=(jitterLevel||0);
+  const jitterActive=jitterOnEl.checked && maxAbs>0;
+  if(currentTool==='palette'){
+    for(let fi=0;fi<3;fi++){
+      const pp=jitterActive ? jitterPoint(to,maxAbs) : to;
+      stampPalette(frames[fi],pp.x,pp.y,val,size);
+    }
+    stampPalette(frames[3],to.x,to.y,val,size);
+    return;
+  }
+  for(let fi=0;fi<3;fi++){
+    if(jitterActive){
+      drawLineValue(frames[fi],jitterPoint(from,maxAbs),jitterPoint(to,maxAbs),val,size);
+    }else{
+      drawLineValue(frames[fi],from,to,val,size);
+    }
+  }
+  drawLineValue(frames[3],from,to,val,size);
+}
+canvas.addEventListener('mousedown',e=>{
+  drawing=true;
+  last=getPos(e);
+  const val=getPaintValue();
+  drawSegment(last,last,val);
+  renderCurrent();
+});
+canvas.addEventListener('mousemove',e=>{
+  if(!drawing) return;
+  const p=getPos(e);
+  const val=getPaintValue();
+  if(currentTool==='palette'){
+    drawSegment(p,p,val);
+  }else{
+    drawSegment(last,p,val);
+  }
+  last=p;
+  renderCurrent();
+});
+window.addEventListener('mouseup',()=>{ drawing=false; });
+canvas.addEventListener('mouseleave',()=>{ drawing=false; });
+penBtn.addEventListener('click',()=>{ setTool('pencil'); });
+pen2Btn.addEventListener('click',()=>{ setTool('pen'); });
+eraserBtn.addEventListener('click',()=>{ setTool('eraser'); });
+
+function clearCanvas(){
+  // 清空：所有帧像素值置 0（透明）
+  for(const f of frames) f.fill(0);
+  renderCurrent();
+}
+clearBtn.addEventListener('click',clearCanvas);
+
+// ===== GIF 导出（gifenc） =====
+
+function exportGif(){
+  // 抖动开启 => 导出 3 帧循环；抖动关闭 => 导出稳定帧 1 张
+  const exportFramesRaw=jitterOnEl.checked ? [frames[0],frames[1],frames[2]] : [frames[3]];
+  const delayMs=jitterOnEl.checked ? 120 : 0;
+  const transparent=toggleTransparent.checked;
+
+  // 不透明导出：把透明像素（0）拍扁到背景色（1），这样在任何查看器里都不会“看起来没内容”
+  const exportFrames=exportFramesRaw.map(f=>{
+    if(transparent) return f;
+    const out=new Uint8Array(f.length);
+    for(let i=0;i<f.length;i++){
+      const v=f[i];
+      out[i]=v===0?1:v;
+    }
+    return out;
+  });
+
+  const palette=[];
+  for(let i=0;i<=MAX_COLOR_INDEX;i++) palette[i]=hexToRGB(colorMap[i] ?? '#000000');
+
+  const gif=GIFEncoder({ repeat: jitterOnEl.checked ? 0 : -1 });
+  for(const indices of exportFrames){
+    // frames 里存的是“调色板索引”，可以直接作为 gifenc 的 indexed bitmap 输入
+    const options={ palette, delay: delayMs };
+    if(transparent) options.transparent=0;
+    gif.writeFrame(indices,W,H,options);
+  }
+  gif.finish();
+  const gifBytes=gif.bytes();
+  const blob=new Blob([gifBytes],{type:'image/gif'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='export.gif';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+exportGifBtn.addEventListener('click',exportGif);
+
+const colorPage=document.getElementById('colorPage');
+const container=document.querySelector('.container');
+advancedBtn.addEventListener('click',()=>{
+  container.classList.toggle('advanced');
+  advancedBtn.classList.toggle('is-active',container.classList.contains('advanced'));
+});
+document.getElementById('switchColor').addEventListener('click',()=>{
+  stopAnim();
+  displayFrame=3;
+  colorPage.style.display='flex';
+  container.classList.add('color-mode');
+  renderCurrent();
+});
+document.getElementById('back').addEventListener('click',()=>{
+  colorPage.style.display='none';
+  container.classList.remove('color-mode');
+  if(jitterOnEl.checked){
+    displayFrame=0;
+    startAnim();
+  }else{
+    displayFrame=3;
+  }
+  renderCurrent();
+});
+document.querySelectorAll('#colorPage input[type=color]').forEach(input=>{
+  const idx=Number(input.dataset.index);
+  input.value=colorMap[idx];
+  input.addEventListener('change',()=>{
+    colorMap[idx]=input.value;
+    if(idx===1){ applyBackground(); }
+    syncPaletteButtonsColors();
+    renderCurrent();
+  });
+});
+const checkerboard=document.getElementById('checkerboard');
+const toggleTransparent=document.getElementById('toggleTransparent');
+const jitterOnEl=document.getElementById('jitterOn');
+const jitter=document.getElementById('jitter');
+const jitterValue=document.getElementById('jitterValue');
+function updateJitter(){
+  jitterLevel=Number(jitter.value)||0;
+  jitterValue.textContent=String(jitterLevel);
+}
+updateJitter();
+jitter.addEventListener('input',updateJitter);
+jitterOnEl.addEventListener('change',()=>{
+  if(jitterOnEl.checked){
+    displayFrame=0;
+    startAnim();
+  }else{
+    stopAnim();
+    displayFrame=3;
+    renderCurrent();
+  }
+});
+sizeEl.addEventListener('input',()=>{
+  const v=Math.max(1,Math.min(31,Number(sizeEl.value)||1));
+  if(!toolSettings[currentTool]) toolSettings[currentTool]={ size:1 };
+  toolSettings[currentTool].size=v;
+  sizeValueEl.textContent=String(v);
+});
+function syncOutlineColorsUI(){
+  outlineColorsEl.style.display=separateOutlineEl.checked?'flex':'none';
+}
+separateOutlineEl.addEventListener('change',()=>{
+  syncOutlineColorsUI();
+});
+function fileToImage(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      resolve(img);
+    };
+    img.onerror=()=>{
+      URL.revokeObjectURL(url);
+      reject(new Error('image load failed'));
+    };
+    img.src=url;
+  });
+}
+const patternRenderCanvas=document.createElement('canvas');
+patternRenderCanvas.width=PATTERN_W;
+patternRenderCanvas.height=PATTERN_H;
+const patternRenderCtx=patternRenderCanvas.getContext('2d');
+patternRenderCtx.imageSmoothingEnabled=false;
+function renderMaskToCanvas(mask,w,h,ctx){
+  const img=ctx.createImageData(w,h);
+  const data=img.data;
+  for(let i=0;i<mask.length;i++){
+    const o=i*4;
+    if(mask[i]){
+      data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=255;
+    }else{
+      data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
+    }
+  }
+  ctx.putImageData(img,0,0);
+}
+function renderDefaultThumb(){
+  const w=patternThumbCanvas.width;
+  const h=patternThumbCanvas.height;
+  const img=patternThumbCtx.createImageData(w,h);
+  const data=img.data;
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      const on=((x>>2)^(y>>2))&1;
+      const o=(y*w+x)*4;
+      const v=on?40:220;
+      data[o]=v; data[o+1]=v; data[o+2]=v; data[o+3]=255;
+    }
+  }
+  patternThumbCtx.putImageData(img,0,0);
+}
+function getActiveMask32(){
+  if(activePatternId==='default') return null;
+  const p=patterns.find(x=>x.id===activePatternId);
+  return (p && p.mask) ? p.mask : null;
+}
+function updatePatternSelectUI(){
+  if(activePatternId==='default'){
+    patternSelectLabelEl.textContent='默认图案';
+    renderDefaultThumb();
+  }else{
+    patternSelectLabelEl.textContent='';
+    const m=getActiveMask32();
+    if(m){
+      patternRenderCtx.clearRect(0,0,PATTERN_W,PATTERN_H);
+      renderMaskToCanvas(m,PATTERN_W,PATTERN_H,patternRenderCtx);
+      patternThumbCtx.clearRect(0,0,patternThumbCanvas.width,patternThumbCanvas.height);
+      patternThumbCtx.drawImage(patternRenderCanvas,0,0,patternThumbCanvas.width,patternThumbCanvas.height);
+    }else{
+      renderDefaultThumb();
+    }
+  }
+  for(const btn of patternListEl.querySelectorAll('.pattern-item')){
+    btn.classList.toggle('is-active',btn.dataset.id===activePatternId);
+  }
+}
+function rebuildPatternList(){
+  patternListEl.innerHTML='';
+  for(const p of patterns){
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.className='pattern-item';
+    btn.dataset.id=p.id;
+    if(p.id==='default'){
+      btn.innerHTML=`<span class="label">默认</span>`;
+    }else{
+      const c=document.createElement('canvas');
+      c.width=PATTERN_W;
+      c.height=PATTERN_H;
+      const cctx=c.getContext('2d');
+      cctx.imageSmoothingEnabled=false;
+      renderMaskToCanvas(p.mask,PATTERN_W,PATTERN_H,cctx);
+      btn.appendChild(c);
+    }
+    btn.addEventListener('click',()=>{
+      activePatternId=p.id;
+      updatePatternSelectUI();
+      closePatternPopover();
+    });
+    patternListEl.appendChild(btn);
+  }
+  updatePatternSelectUI();
+}
+function openPatternPopover(){
+  patternPopoverEl.classList.add('is-open');
+  patternSelectBtn.setAttribute('aria-expanded','true');
+}
+function closePatternPopover(){
+  patternPopoverEl.classList.remove('is-open');
+  patternSelectBtn.setAttribute('aria-expanded','false');
+}
+patternSelectBtn.addEventListener('click',()=>{
+  if(patternPopoverEl.classList.contains('is-open')) closePatternPopover();
+  else openPatternPopover();
+});
+document.addEventListener('mousedown',(e)=>{
+  if(!patternPopoverEl.classList.contains('is-open')) return;
+  if(patternPickerEl && patternPickerEl.contains(e.target)) return;
+  closePatternPopover();
+});
+function resampleMaskOR(src,sw,sh,ow,oh){
+  const out=new Uint8Array(ow*oh);
+  for(let y=0;y<oh;y++){
+    const sy0=Math.floor(y*sh/oh);
+    const sy1=Math.max(sy0+1,Math.floor((y+1)*sh/oh));
+    for(let x=0;x<ow;x++){
+      const sx0=Math.floor(x*sw/ow);
+      const sx1=Math.max(sx0+1,Math.floor((x+1)*sw/ow));
+      let on=0;
+      for(let yy=sy0;yy<sy1 && !on;yy++){
+        const row=yy*sw;
+        for(let xx=sx0;xx<sx1;xx++){
+          if(src[row+xx]){ on=1; break; }
+        }
+      }
+      out[y*ow+x]=on;
+    }
+  }
+  return out;
+}
+function trimMask(src,sw,sh){
+  let minX=sw, minY=sh, maxX=-1, maxY=-1;
+  for(let y=0;y<sh;y++){
+    const row=y*sw;
+    for(let x=0;x<sw;x++){
+      if(!src[row+x]) continue;
+      if(x<minX) minX=x;
+      if(y<minY) minY=y;
+      if(x>maxX) maxX=x;
+      if(y>maxY) maxY=y;
+    }
+  }
+  if(maxX<0) return { mask:new Uint8Array(1), w:1, h:1 };
+  const w=maxX-minX+1;
+  const h=maxY-minY+1;
+  const out=new Uint8Array(w*h);
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){
+      out[y*w+x]=src[(minY+y)*sw+(minX+x)];
+    }
+  }
+  return { mask:out, w, h };
+}
+async function makeMask32FromImage(img){
+  const maxDim=256;
+  const scale=Math.min(1,maxDim/Math.max(img.width,img.height));
+  const w=Math.max(1,Math.round(img.width*scale));
+  const h=Math.max(1,Math.round(img.height*scale));
+  const c=document.createElement('canvas');
+  c.width=w;
+  c.height=h;
+  const cctx=c.getContext('2d');
+  cctx.clearRect(0,0,w,h);
+  cctx.drawImage(img,0,0,w,h);
+  const data=cctx.getImageData(0,0,w,h).data;
+  const mask=new Uint8Array(w*h);
+  for(let i=0;i<mask.length;i++){
+    const o=i*4;
+    const a=data[o+3];
+    if(a<128){ mask[i]=0; continue; }
+    const r=data[o], g=data[o+1], b=data[o+2];
+    const lum=(r*0.2126+g*0.7152+b*0.0722);
+    mask[i]=lum<128?1:0;
+  }
+  const t=trimMask(mask,w,h);
+  return resampleMaskOR(t.mask,t.w,t.h,PATTERN_W,PATTERN_H);
+}
+function renderPending(){
+  patternEditEl.classList.toggle('is-visible',!!pendingMask32);
+  if(!pendingMask32) return;
+  patternPreviewCtx.clearRect(0,0,PATTERN_W,PATTERN_H);
+  renderMaskToCanvas(pendingMask32,PATTERN_W,PATTERN_H,patternPreviewCtx);
+}
+patternUploadBtn.addEventListener('click',()=>{
+  patternFileEl.value='';
+  patternFileEl.click();
+});
+patternFileEl.addEventListener('change',async ()=>{
+  const file=patternFileEl.files && patternFileEl.files[0];
+  if(!file) return;
+  try{
+    const img=await fileToImage(file);
+    pendingMask32=await makeMask32FromImage(img);
+    renderPending();
+  }catch{}
+});
+patternInvertBtn.addEventListener('click',()=>{
+  if(!pendingMask32) return;
+  for(let i=0;i<pendingMask32.length;i++) pendingMask32[i]=pendingMask32[i]?0:1;
+  renderPending();
+});
+patternConfirmBtn.addEventListener('click',()=>{
+  if(!pendingMask32) return;
+  const id=`p${nextPatternId++}`;
+  patterns.push({ id, mask: pendingMask32.slice() });
+  activePatternId=id;
+  pendingMask32=null;
+  rebuildPatternList();
+  renderPending();
+});
+function createPaletteButton(value){
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='palette-btn';
+  btn.dataset.value=String(value);
+  btn.title=`笔${value}`;
+  btn.innerHTML=`<span class="wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18c2.2 0 3-1 3-2.5S14 16 12.5 16H12a2 2 0 0 1 0-4h1.2c1.9 0 3.8-1.5 3.8-4.2A4.8 4.8 0 0 0 12 3Z"/><path d="M7.5 10.5h.01"/><path d="M9.5 7.5h.01"/><path d="M14.5 7.5h.01"/><path d="M16.5 10.5h.01"/></svg><span class="swatch"></span></span>`;
+  btn.addEventListener('click',()=>{
+    paletteValue=value;
+    setTool('palette');
+  });
+  return btn;
+}
+const paletteButtons=[];
+for(let i=1;i<=BASE_COLOR_COUNT;i++){
+  const btn=createPaletteButton(i);
+  paletteButtons.push(btn);
+  paletteToolsEl.appendChild(btn);
+}
+function syncPaletteButtonsColors(){
+  for(const btn of paletteButtons){
+    const v=Number(btn.dataset.value);
+    const swatch=btn.querySelector('.swatch');
+    if(swatch) swatch.style.background=colorMap[v] ?? '#000000';
+  }
+}
+function syncPaletteButtonsActive(){
+  for(const btn of paletteButtons){
+    const v=Number(btn.dataset.value);
+    btn.classList.toggle('is-active',currentTool==='palette' && v===paletteValue);
+  }
+}
+function applyBackground(){
+  // “透明背景”开关只影响棋盘格的显示，用于表达透明区域
+  const bg1=colorMap[1];
+  document.querySelector('.container').style.background=bg1;
+  const showBgLayer=toggleTransparent.checked;
+  checkerboard.style.display=showBgLayer?'block':'none';
+  if(showBgLayer){
+    if(customBgUrl){
+      checkerboard.style.backgroundImage=`url("${customBgUrl}")`;
+      checkerboard.style.backgroundSize='contain';
+      checkerboard.style.backgroundRepeat='no-repeat';
+      checkerboard.style.backgroundPosition='center';
+    }else{
+      checkerboard.style.backgroundImage=
+        `linear-gradient(45deg, #dcdcdc 25%, transparent 25%, transparent 75%, #dcdcdc 75%, #dcdcdc),
+         linear-gradient(45deg, ${bg1} 25%, transparent 25%, transparent 75%, ${bg1} 75%, ${bg1})`;
+      checkerboard.style.backgroundSize='16px 16px';
+      checkerboard.style.backgroundPosition='0 0, 8px 8px';
+      checkerboard.style.backgroundRepeat='repeat';
+    }
+  }else{
+    checkerboard.style.backgroundImage='none';
+  }
+  const previewBg=document.getElementById('previewBg');
+  if(showBgLayer){
+    if(customBgUrl){
+      previewBg.style.backgroundImage=`url("${customBgUrl}")`;
+      previewBg.style.backgroundSize='contain';
+      previewBg.style.backgroundRepeat='no-repeat';
+      previewBg.style.backgroundPosition='center';
+      previewBg.style.backgroundColor=bg1;
+    }else{
+      previewBg.style.backgroundImage=
+        `linear-gradient(45deg, #dcdcdc 25%, transparent 25%, transparent 75%, #dcdcdc 75%, #dcdcdc),
+         linear-gradient(45deg, ${bg1} 25%, transparent 25%, transparent 75%, ${bg1} 75%, ${bg1})`;
+      previewBg.style.backgroundSize='16px 16px';
+      previewBg.style.backgroundPosition='0 0, 8px 8px';
+      previewBg.style.backgroundColor='';
+    }
+  }else{
+    previewBg.style.backgroundImage='none';
+    previewBg.style.backgroundColor=bg1;
+  }
+}
+toggleTransparent.addEventListener('change',()=>{
+  applyBackground();
+  renderCurrent();
+});
+applyBackground();
+syncOutlineColorsUI();
+syncPaletteButtonsColors();
+rebuildPatternList();
+renderPending();
+if(jitterOnEl.checked){
+  displayFrame=0;
+  startAnim();
+}else{
+  displayFrame=3;
+}
+renderCurrent();
+setTool('pencil');
+
+function nearestPaletteIndex(r,g,b,paletteRGB){
+  let bestI=1;
+  let bestD=Infinity;
+  for(let i=1;i<=BASE_COLOR_COUNT;i++){
+    const pr=paletteRGB[i][0], pg=paletteRGB[i][1], pb=paletteRGB[i][2];
+    const dr=r-pr, dg=g-pg, db=b-pb;
+    const d=dr*dr+dg*dg+db*db;
+    if(d<bestD){ bestD=d; bestI=i; }
+  }
+  return bestI;
+}
+function compositeFrame(screenW,screenH,composite){
+  const paletteRGB=Array.from({length: BASE_COLOR_COUNT+1},(_,i)=>i?hexToRGB(colorMap[i]):[0,0,0]);
+  const out=new Uint8Array(W*H);
+  for(let y=0;y<H;y++){
+    const sy=Math.floor(y*screenH/H);
+    for(let x=0;x<W;x++){
+      const sx=Math.floor(x*screenW/W);
+      const o=(sy*screenW+sx)*4;
+      const a=composite[o+3];
+      if(a<128){
+        out[y*W+x]=0;
+      }else{
+        const r=composite[o], g=composite[o+1], b=composite[o+2];
+        out[y*W+x]=nearestPaletteIndex(r,g,b,paletteRGB);
+      }
+    }
+  }
+  return out;
+}
+async function importGifFromFile(file){
+  const buf=await file.arrayBuffer();
+  const gif=parseGIF(new Uint8Array(buf));
+  const screenW=gif.lsd?.width ?? W;
+  const screenH=gif.lsd?.height ?? H;
+  const decoded=decompressFrames(gif,true);
+  if(!decoded || decoded.length===0) return;
+  const composite=new Uint8ClampedArray(screenW*screenH*4);
+  const mapped=[];
+  let restore=null;
+  for(const f of decoded){
+    const { left=0, top=0, width=screenW, height=screenH }=f.dims ?? {};
+    const patch=f.patch;
+    if(f.disposalType===3){
+      restore=composite.slice();
+    }else{
+      restore=null;
+    }
+    if(patch && width>0 && height>0){
+      for(let y=0;y<height;y++){
+        const dy=top+y;
+        if(dy<0||dy>=screenH) continue;
+        for(let x=0;x<width;x++){
+          const dx=left+x;
+          if(dx<0||dx>=screenW) continue;
+          const so=(y*width+x)*4;
+          const a=patch[so+3];
+          if(a===0) continue;
+          const to=(dy*screenW+dx)*4;
+          composite[to]=patch[so];
+          composite[to+1]=patch[so+1];
+          composite[to+2]=patch[so+2];
+          composite[to+3]=a;
+        }
+      }
+    }
+    mapped.push(compositeFrame(screenW,screenH,composite));
+    if(f.disposalType===2 && width>0 && height>0){
+      for(let y=0;y<height;y++){
+        const dy=top+y;
+        if(dy<0||dy>=screenH) continue;
+        for(let x=0;x<width;x++){
+          const dx=left+x;
+          if(dx<0||dx>=screenW) continue;
+          const to=(dy*screenW+dx)*4;
+          composite[to]=0; composite[to+1]=0; composite[to+2]=0; composite[to+3]=0;
+        }
+      }
+    }else if(f.disposalType===3 && restore){
+      composite.set(restore);
+    }
+  }
+  const srcCount=mapped.length;
+  for(let fi=0;fi<3;fi++){
+    frames[fi].set(mapped[fi%srcCount]);
+  }
+  frames[3].set(mapped[0]);
+}
+importGifBtn.addEventListener('click',()=>{
+  gifFileEl.value='';
+  gifFileEl.click();
+});
+gifFileEl.addEventListener('change',async ()=>{
+  const file=gifFileEl.files && gifFileEl.files[0];
+  if(!file) return;
+  stopAnim();
+  try{
+    await importGifFromFile(file);
+  }catch{}
+  if(jitterOnEl.checked){
+    displayFrame=0;
+    startAnim();
+  }else{
+    displayFrame=3;
+  }
+  renderCurrent();
+});
+importBgBtn.addEventListener('click',()=>{
+  bgFileEl.value='';
+  bgFileEl.click();
+});
+bgFileEl.addEventListener('change',()=>{
+  const file=bgFileEl.files && bgFileEl.files[0];
+  if(!file) return;
+  if(customBgUrl) URL.revokeObjectURL(customBgUrl);
+  customBgUrl=URL.createObjectURL(file);
+  applyBackground();
+  renderCurrent();
+});
+</script>
+</body>
+</html>
