@@ -14,22 +14,20 @@ export function createPatternController(ctx){
     patternEditEl,
     patternPreviewCtx,
     patternUploadBtn,
+    patternDeleteBtn,
     patternInvertBtn,
     patternConfirmBtn,
     patternFileEl,
   }=ctx;
 
-  const PATTERN_W=32;
-  const PATTERN_H=32;
+  const PATTERN_MAX_DIM=128;
 
-  const patterns=[{ id:'default', mask:null }];
+  const patterns=[{ id:'default', mask:null, w:0, h:0 }];
   let activePatternId='default';
-  let pendingMask32=null;
+  let pendingPattern=null;
   let nextPatternId=1;
 
   const patternRenderCanvas=document.createElement('canvas');
-  patternRenderCanvas.width=PATTERN_W;
-  patternRenderCanvas.height=PATTERN_H;
   const patternRenderCtx=patternRenderCanvas.getContext('2d');
   patternRenderCtx.imageSmoothingEnabled=false;
 
@@ -45,6 +43,29 @@ export function createPatternController(ctx){
       }
     }
     ctx2d.putImageData(img,0,0);
+  }
+
+  function ensureRenderCanvas(w,h){
+    const cw=patternRenderCanvas.width|0;
+    const ch=patternRenderCanvas.height|0;
+    if(cw===w && ch===h) return;
+    patternRenderCanvas.width=w;
+    patternRenderCanvas.height=h;
+    patternRenderCtx.imageSmoothingEnabled=false;
+  }
+
+  function drawPatternTo(ctx2d,targetW,targetH,pattern){
+    if(!pattern || !pattern.mask || !pattern.w || !pattern.h) return;
+    ensureRenderCanvas(pattern.w,pattern.h);
+    patternRenderCtx.clearRect(0,0,pattern.w,pattern.h);
+    renderMaskToCanvas(pattern.mask,pattern.w,pattern.h,patternRenderCtx);
+    ctx2d.clearRect(0,0,targetW,targetH);
+    const scale=Math.min(targetW/pattern.w,targetH/pattern.h);
+    const dw=Math.max(1,Math.floor(pattern.w*scale));
+    const dh=Math.max(1,Math.floor(pattern.h*scale));
+    const dx=Math.floor((targetW-dw)/2);
+    const dy=Math.floor((targetH-dh)/2);
+    ctx2d.drawImage(patternRenderCanvas,dx,dy,dw,dh);
   }
 
   function renderDefaultThumb(){
@@ -64,10 +85,17 @@ export function createPatternController(ctx){
     patternThumbCtx.putImageData(img,0,0);
   }
 
-  function getActiveMask32(){
+  function getPattern(patternId){
+    if(!patternId) return null;
+    const p=patterns.find(x=>x.id===patternId);
+    return p || null;
+  }
+
+  function getActivePattern(){
     if(activePatternId==='default') return null;
-    const p=patterns.find(x=>x.id===activePatternId);
-    return (p && p.mask) ? p.mask : null;
+    const p=getPattern(activePatternId);
+    if(!p || !p.mask) return null;
+    return p;
   }
 
   function updatePatternSelectUI(){
@@ -77,12 +105,9 @@ export function createPatternController(ctx){
       renderDefaultThumb();
     }else{
       patternSelectLabelEl.textContent='';
-      const m=getActiveMask32();
-      if(m && patternThumbCanvas && patternThumbCtx){
-        patternRenderCtx.clearRect(0,0,PATTERN_W,PATTERN_H);
-        renderMaskToCanvas(m,PATTERN_W,PATTERN_H,patternRenderCtx);
-        patternThumbCtx.clearRect(0,0,patternThumbCanvas.width,patternThumbCanvas.height);
-        patternThumbCtx.drawImage(patternRenderCanvas,0,0,patternThumbCanvas.width,patternThumbCanvas.height);
+      const p=getActivePattern();
+      if(p && patternThumbCanvas && patternThumbCtx){
+        drawPatternTo(patternThumbCtx,patternThumbCanvas.width,patternThumbCanvas.height,p);
       }else{
         renderDefaultThumb();
       }
@@ -118,11 +143,11 @@ export function createPatternController(ctx){
         btn.innerHTML=`<span class="label">默认</span>`;
       }else{
         const c=document.createElement('canvas');
-        c.width=PATTERN_W;
-        c.height=PATTERN_H;
+        c.width=32;
+        c.height=32;
         const cctx=c.getContext('2d');
         cctx.imageSmoothingEnabled=false;
-        renderMaskToCanvas(p.mask,PATTERN_W,PATTERN_H,cctx);
+        drawPatternTo(cctx,32,32,p);
         btn.appendChild(c);
       }
       btn.addEventListener('click',()=>{
@@ -151,54 +176,8 @@ export function createPatternController(ctx){
     });
   }
 
-  function resampleMaskOR(src,sw,sh,ow,oh){
-    const out=new Uint8Array(ow*oh);
-    for(let y=0;y<oh;y++){
-      const sy0=Math.floor(y*sh/oh);
-      const sy1=Math.max(sy0+1,Math.floor((y+1)*sh/oh));
-      for(let x=0;x<ow;x++){
-        const sx0=Math.floor(x*sw/ow);
-        const sx1=Math.max(sx0+1,Math.floor((x+1)*sw/ow));
-        let on=0;
-        for(let yy=sy0;yy<sy1 && !on;yy++){
-          const row=yy*sw;
-          for(let xx=sx0;xx<sx1;xx++){
-            if(src[row+xx]){ on=1; break; }
-          }
-        }
-        out[y*ow+x]=on;
-      }
-    }
-    return out;
-  }
-
-  function trimMask(src,sw,sh){
-    let minX=sw, minY=sh, maxX=-1, maxY=-1;
-    for(let y=0;y<sh;y++){
-      const row=y*sw;
-      for(let x=0;x<sw;x++){
-        if(!src[row+x]) continue;
-        if(x<minX) minX=x;
-        if(y<minY) minY=y;
-        if(x>maxX) maxX=x;
-        if(y>maxY) maxY=y;
-      }
-    }
-    if(maxX<0) return { mask:new Uint8Array(1), w:1, h:1 };
-    const w=maxX-minX+1;
-    const h=maxY-minY+1;
-    const out=new Uint8Array(w*h);
-    for(let y=0;y<h;y++){
-      for(let x=0;x<w;x++){
-        out[y*w+x]=src[(minY+y)*sw+(minX+x)];
-      }
-    }
-    return { mask:out, w, h };
-  }
-
-  async function makeMask32FromImage(img){
-    const maxDim=256;
-    const scale=Math.min(1,maxDim/Math.max(img.width,img.height));
+  async function makePatternFromImage(img){
+    const scale=Math.min(1,PATTERN_MAX_DIM/Math.max(img.width,img.height));
     const w=Math.max(1,Math.round(img.width*scale));
     const h=Math.max(1,Math.round(img.height*scale));
     const c=document.createElement('canvas');
@@ -217,25 +196,24 @@ export function createPatternController(ctx){
       const lum=(r*0.2126+g*0.7152+b*0.0722);
       mask[i]=lum<128?1:0;
     }
-    const t=trimMask(mask,w,h);
-    return resampleMaskOR(t.mask,t.w,t.h,PATTERN_W,PATTERN_H);
+    return { mask, w, h };
   }
 
   function renderPending(){
     if(!patternEditEl) return;
-    patternEditEl.classList.toggle('is-visible',!!pendingMask32);
-    if(!pendingMask32) return;
+    patternEditEl.classList.toggle('is-visible',!!pendingPattern);
+    if(!pendingPattern) return;
     if(!patternPreviewCtx) return;
-    patternPreviewCtx.clearRect(0,0,PATTERN_W,PATTERN_H);
-    renderMaskToCanvas(pendingMask32,PATTERN_W,PATTERN_H,patternPreviewCtx);
+    const pw=patternPreviewCtx.canvas.width|0;
+    const ph=patternPreviewCtx.canvas.height|0;
+    drawPatternTo(patternPreviewCtx,pw,ph,pendingPattern);
   }
 
   function getBrushForSize(patternId){
     if(!patternId || patternId==='default') return null;
-    const p=patterns.find(x=>x.id===patternId);
-    const baseMask=p && p.mask;
-    if(!baseMask) return null;
-    return { w:PATTERN_W, h:PATTERN_H, mask: baseMask };
+    const p=getPattern(patternId);
+    if(!p || !p.mask || !p.w || !p.h) return null;
+    return { w:p.w, h:p.h, mask: p.mask };
   }
 
   function stampPalette(frame,x,y,val,size){
@@ -251,6 +229,8 @@ export function createPatternController(ctx){
     const list=patterns.map(p=>({
       id:String(p.id||''),
       mask:p && p.mask ? u8ToB64(p.mask) : null,
+      w: Number(p && p.w)||0,
+      h: Number(p && p.h)||0,
     })).filter(p=>p.id);
     return {
       activeId: String(activePatternId||'default'),
@@ -267,11 +247,21 @@ export function createPatternController(ctx){
       if(!id) return null;
       if(id==='default') return { id:'default', mask:null };
       const mask=p && p.mask ? b64ToU8(p.mask) : null;
-      if(!(mask instanceof Uint8Array) || mask.length!==(PATTERN_W*PATTERN_H)) return null;
-      return { id, mask };
+      if(!(mask instanceof Uint8Array)) return null;
+      let w=Number(p && p.w)||0;
+      let h=Number(p && p.h)||0;
+      if(w<=0 || h<=0){
+        if(mask.length===(32*32)){
+          w=32; h=32;
+        }else{
+          return null;
+        }
+      }
+      if(mask.length!==(w*h)) return null;
+      return { id, mask, w:w|0, h:h|0 };
     }).filter(Boolean);
     patterns.length=0;
-    patterns.push({ id:'default', mask:null });
+    patterns.push({ id:'default', mask:null, w:0, h:0 });
     for(const p of nextList){
       if(p.id==='default') continue;
       if(patterns.some(x=>x.id===p.id)) continue;
@@ -305,25 +295,37 @@ export function createPatternController(ctx){
         if(!file) return;
         try{
           const img=await fileToImage(file);
-          pendingMask32=await makeMask32FromImage(img);
+          pendingPattern=await makePatternFromImage(img);
           renderPending();
         }catch{}
       });
     }
+    if(patternDeleteBtn){
+      patternDeleteBtn.addEventListener('click',()=>{
+        if(activePatternId==='default') return;
+        const idx=patterns.findIndex(x=>x.id===activePatternId);
+        if(idx<=0) return;
+        patterns.splice(idx,1);
+        activePatternId='default';
+        rebuildPatternList();
+        renderPending();
+      });
+    }
     if(patternInvertBtn){
       patternInvertBtn.addEventListener('click',()=>{
-        if(!pendingMask32) return;
-        for(let i=0;i<pendingMask32.length;i++) pendingMask32[i]=pendingMask32[i]?0:1;
+        if(!pendingPattern || !pendingPattern.mask) return;
+        const mask=pendingPattern.mask;
+        for(let i=0;i<mask.length;i++) mask[i]=mask[i]?0:1;
         renderPending();
       });
     }
     if(patternConfirmBtn){
       patternConfirmBtn.addEventListener('click',()=>{
-        if(!pendingMask32) return;
+        if(!pendingPattern || !pendingPattern.mask) return;
         const id=`p${nextPatternId++}`;
-        patterns.push({ id, mask: pendingMask32.slice() });
+        patterns.push({ id, mask: pendingPattern.mask.slice(), w: pendingPattern.w|0, h: pendingPattern.h|0 });
         activePatternId=id;
-        pendingMask32=null;
+        pendingPattern=null;
         rebuildPatternList();
         renderPending();
       });
@@ -338,7 +340,5 @@ export function createPatternController(ctx){
     stampPalette,
     getConfig,
     applyConfig,
-    getPatternSize: ()=>({ w:PATTERN_W, h:PATTERN_H }),
   };
 }
-

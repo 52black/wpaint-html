@@ -52,7 +52,8 @@
       <div id="patternList" class="pattern-list" aria-label="图案列表"></div>
       <div id="patternStage" class="pattern-stage" aria-label="图案编辑">
         <div class="row">
-          <button id="patternUpload" type="button" class="action-btn">上传图案</button>
+          <button id="patternUpload" type="button" class="action-btn">上传</button>
+          <button id="patternDelete" type="button" class="action-btn">删除</button>
         </div>
         <div id="patternEdit" class="pattern-edit">
           <div class="pattern-preview"><canvas id="patternPreview" width="32" height="32"></canvas></div>
@@ -106,6 +107,18 @@
     <div class="cell"><label for="cropBottom">下</label><input id="cropBottom" type="number" step="1" value="0"></div>
   </div>
   <div id="cropHint" class="hint">提示：输入负数表示向外扩展画布（左右最多各扩展 100% 宽度）</div>
+  <button id="cropAuto" type="button" class="action-btn crop-auto-btn">自动识别</button>
+</div>
+<div id="selectPanel" class="select-panel" role="region" aria-label="选择">
+  <div class="row">
+    <button id="selectCopy" type="button" class="action-btn">复制</button>
+    <button id="selectCut" type="button" class="action-btn">剪切</button>
+    <button id="selectPaste" type="button" class="action-btn">粘贴</button>
+  </div>
+  <div class="row">
+    <button id="selectClear" type="button" class="action-btn">取消选区</button>
+    <button id="selectExit" type="button" class="action-btn">退出选择</button>
+  </div>
 </div>
 </div>
 <div class="jitter-panel">
@@ -113,7 +126,7 @@
     <div class="row">
       <label class="toggle"><input id="jitterOn" type="checkbox" checked><span>抖动</span></label>
       <div class="range">
-        <input id="jitter" type="range" min="0" max="10" step="1" value="1">
+        <input id="jitter" type="range" min="0" max="10" step="1" value="1" style="width:80px">
         <span id="jitterValue" class="pill">1</span>
       </div>
     </div>
@@ -136,7 +149,7 @@
   <div class="row">
     <span class="label">粗细</span>
     <div class="range">
-      <input id="size" type="range" min="1" max="31" step="1" value="1">
+      <input id="size" type="range" min="1" max="64" step="1" value="1">
       <span id="sizeValue" class="pill">1</span>
     </div>
   </div>
@@ -158,12 +171,24 @@
       <div id="cropRect" class="crop-rect"></div>
     </div>
   </div>
+  <div id="selectOverlay" class="select-overlay" aria-hidden="true">
+    <div id="selectOverlayContent" class="select-overlay-content">
+      <div id="selectRect" class="select-rect"></div>
+      <div class="select-handle" data-h="nw"></div>
+      <div class="select-handle" data-h="n"></div>
+      <div class="select-handle" data-h="ne"></div>
+      <div class="select-handle" data-h="e"></div>
+      <div class="select-handle" data-h="se"></div>
+      <div class="select-handle" data-h="s"></div>
+      <div class="select-handle" data-h="sw"></div>
+      <div class="select-handle" data-h="w"></div>
+    </div>
+  </div>
 </div>
 <div id="colorPage" class="overlay">
   <div class="color-header">
     <span></span>
     <div class="color-actions">
-      <select id="schemeSelect" aria-label="配色方案"></select>
       <label class="toggle"><input type="checkbox" id="toggleTransparent"><span>透明背景</span></label>
       <label class="toggle"><input id="separateOutline" type="checkbox"><span>区分勾线笔颜色</span></label>
       <button id="back" class="action-btn">返回绘制</button>
@@ -202,6 +227,7 @@
             <canvas id="preview" class="preview-canvas" width="152" height="112"></canvas>
           </div>
         </div>
+        <div id="schemeList" class="scheme-list" aria-label="配色方案列表"></div>
       </div>
     </div>
     <div class="card">
@@ -230,6 +256,30 @@
     </div>
 </div>
 </div>
+<div id="resizeModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="清空并调整画布尺寸">
+  <div class="modal-card">
+    <div class="modal-head">
+      <strong>清空/新画布</strong>
+      <button id="resizeClose" type="button" class="action-btn">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-form-grid">
+        <label class="modal-field">
+          <span>宽</span>
+          <input id="resizeW" class="modal-input" type="number" min="1" max="4096" step="1">
+        </label>
+        <label class="modal-field">
+          <span>高</span>
+          <input id="resizeH" class="modal-input" type="number" min="1" max="4096" step="1">
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button id="resizeCancel" type="button" class="action-btn">取消</button>
+        <button id="resizeApply" type="button" class="action-btn">清空并应用</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="aboutModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="关于">
   <div class="modal-card">
     <div class="modal-head">
@@ -237,6 +287,7 @@
       <button id="aboutClose" type="button" class="action-btn">关闭</button>
     </div>
     <div class="modal-body">
+      <div>名称：WPaint</div>
       <div>作者：雪风与梦 (网名)</div>
       <div>参考 wigglypaint（作者:Internet Janitor，John Earnest）</div>
     </div>
@@ -269,7 +320,8 @@
   </div>
 </div>
 </div>
-</div>
+</div>
+
 <script type="module" src="/src/main.js"></script>
 </body>
 </html>

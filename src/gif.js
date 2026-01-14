@@ -3,7 +3,7 @@ import { parseGIF, decompressFrames } from 'gifuct-js';
 import { hexToRGB, ensureGifName, downloadBlobAsFile } from './utils.js';
 
 export function exportGif({ filename, frames, w, h, colorMap, maxColorIndex, transparent, jitterOn, getJitterSubDelayMs }){
-  const exportFramesRaw=jitterOn ? [frames[0],frames[1],frames[2]] : [frames[3]];
+  const exportFramesRaw=jitterOn ? [frames[0],frames[1],frames[2]] : [frames[3],frames[3],frames[3]];
   const exportFrames=exportFramesRaw.map(f=>{
     if(transparent) return f;
     const out=new Uint8Array(f.length);
@@ -127,4 +127,3 @@ export async function decodeGifFileToIndexedFrames({ file, targetW, targetH, col
   const buf=await file.arrayBuffer();
   return decodeGifBytesToIndexedFrames(new Uint8Array(buf),{ targetW, targetH, colorMap, baseColorCount });
 }
-

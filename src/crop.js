@@ -4,6 +4,7 @@ export function createCropController(ctx){
     cropBtnEl,
     cropPanelEl,
     cropApplyEl,
+    cropAutoEl,
     cropCancelEl,
     cropAllowExtendEl,
     cropLeftEl,
@@ -235,6 +236,40 @@ export function createCropController(ctx){
       if(fitCanvasToViewport) fitCanvasToViewport();
     }
   }
+
+  function computeAutoCropDraft(){
+    const W=getW()|0;
+    const H=getH()|0;
+    if(W<=0 || H<=0) return null;
+    let minX=W, minY=H, maxX=-1, maxY=-1;
+    const scan=(frame)=>{
+      if(!(frame instanceof Uint8Array)) return;
+      if(frame.length!==(W*H)) return;
+      for(let y=0;y<H;y++){
+        const row=y*W;
+        for(let x=0;x<W;x++){
+          if(frame[row+x]===0) continue;
+          if(x<minX) minX=x;
+          if(y<minY) minY=y;
+          if(x>maxX) maxX=x;
+          if(y>maxY) maxY=y;
+        }
+      }
+    };
+    const timeline=getTimeline ? getTimeline() : null;
+    if(Array.isArray(timeline)){
+      for(const cel of timeline){
+        if(!cel || !Array.isArray(cel.frames)) continue;
+        for(const frame of cel.frames) scan(frame);
+      }
+    }
+    if(maxX<0) return null;
+    const left=minX|0;
+    const top=minY|0;
+    const right=(W-1-maxX)|0;
+    const bottom=(H-1-maxY)|0;
+    return normalizeCropDraft({ left, right, top, bottom });
+  }
   function cropHitTest(clientX,clientY){
     if(!cropMode || !cropRectEl) return null;
     const r=cropRectEl.getBoundingClientRect();
@@ -304,6 +339,16 @@ export function createCropController(ctx){
   }
   if(cropCancelEl) cropCancelEl.addEventListener('click',closeCrop);
   if(cropApplyEl) cropApplyEl.addEventListener('click',applyCropNow);
+  if(cropAutoEl){
+    cropAutoEl.addEventListener('click',()=>{
+      if(!cropMode) return;
+      const next=computeAutoCropDraft();
+      if(!next) return;
+      cropDraft=next;
+      syncCropInputs();
+      syncCropOverlay();
+    });
+  }
   if(cropAllowExtendEl){
     cropAllowExtendEl.addEventListener('change',()=>{
       if(cropPanelEl){
@@ -403,4 +448,3 @@ export function createCropController(ctx){
     },
   };
 }
-
