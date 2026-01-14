@@ -150,6 +150,8 @@ const selectPanelEl=document.getElementById('selectPanel');
 const selectCopyEl=document.getElementById('selectCopy');
 const selectCutEl=document.getElementById('selectCut');
 const selectPasteEl=document.getElementById('selectPaste');
+const selectKeepRatioEl=document.getElementById('selectKeepRatio');
+const selectTransparentEl=document.getElementById('selectTransparent');
 const selectClearEl=document.getElementById('selectClear');
 const selectExitEl=document.getElementById('selectExit');
 const selectOverlayEl=document.getElementById('selectOverlay');
@@ -490,10 +492,56 @@ function renderPreview(){
   }
   previewCtx.putImageData(img,0,0);
 }
+let selectScratchFrame=null;
+function clearRectInFrame(frame,rect){
+  if(!rect || !frame) return;
+  const w=rect.w|0, h=rect.h|0;
+  for(let oy=0;oy<h;oy++){
+    const y=(rect.y+oy)|0;
+    if(y<0||y>=H) continue;
+    const row=y*W;
+    for(let ox=0;ox<w;ox++){
+      const x=(rect.x+ox)|0;
+      if(x<0||x>=W) continue;
+      frame[row+x]=0;
+    }
+  }
+}
+function blitBufferFrameAt(dstFrame,rect,buffer,fi,options){
+  if(!dstFrame || !rect || !buffer) return;
+  const transparentZero=Boolean(options && options.transparentZero);
+  const w=buffer.w|0, h=buffer.h|0;
+  const src=(buffer.frames && (buffer.frames[fi] ?? buffer.frames[0])) ? (buffer.frames[fi] ?? buffer.frames[0]) : null;
+  if(!src) return;
+  for(let oy=0;oy<h;oy++){
+    const dy=(rect.y+oy)|0;
+    if(dy<0||dy>=H) continue;
+    const row=dy*W;
+    const so=oy*w;
+    for(let ox=0;ox<w;ox++){
+      const dx=(rect.x+ox)|0;
+      if(dx<0||dx>=W) continue;
+      const v=src[so+ox];
+      if(transparentZero && v===0) continue;
+      dstFrame[row+dx]=v;
+    }
+  }
+}
 function renderCurrent(){
   // 换色界面不显示绘画区，跳过大画布渲染，避免调色时卡顿
   if(!container.classList.contains('color-mode')){
-    render(frames[displayFrame]);
+    if(isSelectMode() && selectionHas() && selectionBaseFrames && selectionBuffer){
+      const transparentZero=Boolean(selectTransparentEl && selectTransparentEl.checked);
+      const base=selectionBaseFrames[displayFrame] ?? frames[displayFrame];
+      const need=(W*H)|0;
+      if(!selectScratchFrame || selectScratchFrame.length!==need) selectScratchFrame=new Uint8Array(need);
+      selectScratchFrame.set(base);
+      if(selectionOriginRect) clearRectInFrame(selectScratchFrame,selectionOriginRect);
+      blitBufferFrameAt(selectScratchFrame,selectionRect,selectionBuffer,displayFrame,{ transparentZero });
+      render(selectScratchFrame);
+    }else{
+      render(frames[displayFrame]);
+    }
   }
   renderPreview();
 }
@@ -589,6 +637,9 @@ function pointerCanDraw(e){
   return true;
 }
 let selectionRect=null;
+let selectionOriginRect=null;
+let selectionBaseFrames=null;
+let selectionSourceBuffer=null;
 let selectionBuffer=null;
 let selectionClipboard=null;
 let selectionDrag=null;
@@ -617,11 +668,18 @@ function applyFramesLocal(snapshot){
     frames[i].set(snapshot[i]);
   }
 }
-function captureSelectionBuffer(rect){
+function cloneSelectionBuffer(buffer){
+  if(!buffer) return null;
+  const w=buffer.w|0;
+  const h=buffer.h|0;
+  const srcFrames=Array.isArray(buffer.frames)?buffer.frames:[];
+  return { w, h, frames: [0,1,2,3].map(i=>new Uint8Array(srcFrames[i] ?? srcFrames[0] ?? new Uint8Array(w*h))) };
+}
+function captureSelectionBufferFrom(framesSrc,rect){
   const w=rect.w|0, h=rect.h|0;
   const outFrames=[];
   for(let fi=0;fi<4;fi++){
-    const src=frames[fi];
+    const src=(framesSrc && framesSrc[fi]) ? framesSrc[fi] : frames[fi];
     const out=new Uint8Array(w*h);
     for(let oy=0;oy<h;oy++){
       const sy=rect.y+oy;
@@ -652,7 +710,8 @@ function clearRectInSnapshot(snapshot,rect){
     }
   }
 }
-function blitBufferAt(rect,buffer){
+function blitBufferAt(rect,buffer,options){
+  const transparentZero=Boolean(options && options.transparentZero);
   const w=buffer.w|0, h=buffer.h|0;
   for(let fi=0;fi<4;fi++){
     const dst=frames[fi];
@@ -665,7 +724,9 @@ function blitBufferAt(rect,buffer){
       for(let ox=0;ox<w;ox++){
         const dx=rect.x+ox;
         if(dx<0||dx>=W) continue;
-        dst[row+dx]=src[so+ox];
+        const v=src[so+ox];
+        if(transparentZero && v===0) continue;
+        dst[row+dx]=v;
       }
     }
   }
@@ -724,12 +785,30 @@ function syncSelectUI(){
   if(selectClearEl) selectClearEl.disabled=!has;
   if(selectPasteEl) selectPasteEl.disabled=!Boolean(selectionClipboard);
 }
-function clearSelection(){
+function resetSelectionState(){
   selectionRect=null;
+  selectionOriginRect=null;
+  selectionBaseFrames=null;
+  selectionSourceBuffer=null;
   selectionBuffer=null;
   selectionDrag=null;
   syncSelectionOverlay();
   syncSelectUI();
+}
+function commitSelectionToFrames(){
+  if(!selectionHas() || !selectionBaseFrames || !selectionBuffer) return false;
+  const transparentZero=Boolean(selectTransparentEl && selectTransparentEl.checked);
+  pushHistory();
+  applyFramesLocal(selectionBaseFrames);
+  if(selectionOriginRect) clearRectInSnapshot(frames,selectionOriginRect);
+  blitBufferAt(selectionRect,selectionBuffer,{ transparentZero });
+  return true;
+}
+function clearSelection(options){
+  const doCommit=Boolean(options && options.commit);
+  const committed=doCommit ? commitSelectionToFrames() : false;
+  resetSelectionState();
+  if(committed) renderCurrent();
 }
 function openSelectMode(){
   if(!containerEl) return;
@@ -741,8 +820,8 @@ function openSelectMode(){
 }
 function closeSelectMode(){
   if(!containerEl) return;
+  clearSelection({ commit:true });
   containerEl.classList.remove('select-mode');
-  clearSelection();
 }
 function toggleSelectMode(){
   if(isSelectMode()) closeSelectMode();
@@ -752,12 +831,6 @@ function pointInRect(p,r){
   if(!r) return false;
   return p.x>=r.x && p.y>=r.y && p.x<(r.x+r.w) && p.y<(r.y+r.h);
 }
-function applySelectionPreview(baseFrames,rect,buffer){
-  applyFramesLocal(baseFrames);
-  blitBufferAt(rect,buffer);
-  renderCurrent();
-  syncSelectionOverlay();
-}
 function startSelectionDrag(e,kind,options){
   const pointerId=e.pointerId;
   const start=getPos(e);
@@ -765,22 +838,6 @@ function startSelectionDrag(e,kind,options){
   selectionDrag={ active:true, kind, pointerId, start, startRect, ...options };
   if(selectOverlayEl) selectOverlayEl.setPointerCapture(pointerId);
   e.preventDefault();
-}
-function endSelectionDrag(e){
-  if(!selectionDrag || !selectionDrag.active) return;
-  if(e && e.pointerId!=null && selectionDrag.pointerId!==e.pointerId) return;
-  const kind=selectionDrag.kind;
-  const baseBuffer=selectionDrag.baseBuffer;
-  if(kind==='resize' && baseBuffer && selectionRect){
-    selectionBuffer=scaleBufferNearest(baseBuffer,selectionRect.w,selectionRect.h);
-  }else if(kind==='move' && baseBuffer){
-    selectionBuffer=baseBuffer;
-  }else if(kind==='marquee' && selectionRect){
-    selectionBuffer=captureSelectionBuffer(selectionRect);
-  }
-  selectionDrag=null;
-  syncSelectionOverlay();
-  syncSelectUI();
 }
 function onSelectPointerDown(e){
   if(!isSelectMode()) return;
@@ -790,28 +847,27 @@ function onSelectPointerDown(e){
   const handleEl=e.target && e.target.closest ? e.target.closest('.select-handle') : null;
   const p=getPos(e);
   if(handleEl && selectionHas()){
-    pushHistory();
-    const baseBuffer=selectionBuffer ?? captureSelectionBuffer(selectionRect);
-    const baseFrames=cloneFramesLocal();
-    clearRectInSnapshot(baseFrames,selectionRect);
-    applySelectionPreview(baseFrames,selectionRect,baseBuffer);
-    startSelectionDrag(e,'resize',{ handle: handleEl.getAttribute('data-h')||'', baseFrames, baseBuffer });
+    const handle=handleEl.getAttribute('data-h')||'';
+    const keepRatio=Boolean(selectKeepRatioEl && selectKeepRatioEl.checked) && handle.length===2;
+    const ratio=(selectionRect && selectionRect.h>0) ? (selectionRect.w/selectionRect.h) : 1;
+    startSelectionDrag(e,'resize',{ handle, keepRatio, ratio });
     return;
   }
   if(selectionHas() && pointInRect(p,selectionRect)){
-    pushHistory();
-    const baseBuffer=selectionBuffer ?? captureSelectionBuffer(selectionRect);
-    const baseFrames=cloneFramesLocal();
-    clearRectInSnapshot(baseFrames,selectionRect);
-    applySelectionPreview(baseFrames,selectionRect,baseBuffer);
-    startSelectionDrag(e,'move',{ baseFrames, baseBuffer });
+    startSelectionDrag(e,'move',{});
     return;
   }
-  selectionRect=rectFromPoints(p,p);
+  if(selectionHas()){
+    clearSelection({ commit:true });
+  }
+  selectionRect=null;
+  selectionOriginRect=null;
+  selectionBaseFrames=null;
+  selectionSourceBuffer=null;
   selectionBuffer=null;
   syncSelectionOverlay();
   syncSelectUI();
-  startSelectionDrag(e,'marquee',{});
+  startSelectionDrag(e,'marquee',{ moved:false });
 }
 function onSelectPointerMove(e){
   selectLastPos=getPos(e);
@@ -820,21 +876,25 @@ function onSelectPointerMove(e){
   const p=getPos(e);
   const kind=selectionDrag.kind;
   if(kind==='marquee'){
-    selectionRect=rectFromPoints(selectionDrag.start,p);
-    syncSelectionOverlay();
-    syncSelectUI();
+    const dx=Math.abs((p.x-selectionDrag.start.x)|0);
+    const dy=Math.abs((p.y-selectionDrag.start.y)|0);
+    if(dx+dy>=2){
+      selectionDrag.moved=true;
+      selectionRect=rectFromPoints(selectionDrag.start,p);
+      syncSelectionOverlay();
+      syncSelectUI();
+    }
     return;
   }
-  const baseFrames=selectionDrag.baseFrames;
-  const baseBuffer=selectionDrag.baseBuffer;
-  if(!baseFrames || !baseBuffer || !selectionDrag.startRect) return;
+  if(!selectionHas() || !selectionDrag.startRect) return;
   if(kind==='move'){
     const dx=(p.x-selectionDrag.start.x)|0;
     const dy=(p.y-selectionDrag.start.y)|0;
     const nx=clamp((selectionDrag.startRect.x+dx)|0,0,Math.max(0,(W-selectionDrag.startRect.w)|0));
     const ny=clamp((selectionDrag.startRect.y+dy)|0,0,Math.max(0,(H-selectionDrag.startRect.h)|0));
     selectionRect={ x:nx, y:ny, w:selectionDrag.startRect.w, h:selectionDrag.startRect.h };
-    applySelectionPreview(baseFrames,selectionRect,baseBuffer);
+    renderCurrent();
+    syncSelectionOverlay();
     return;
   }
   if(kind==='resize'){
@@ -845,18 +905,43 @@ function onSelectPointerMove(e){
     let x0=sr.x, y0=sr.y, x1=ax, y1=ay;
     const px=clamp(p.x|0,0,Math.max(0,(W-1)|0));
     const py=clamp(p.y|0,0,Math.max(0,(H-1)|0));
-    if(h.includes('w')) x0=px;
-    if(h.includes('e')) x1=px;
-    if(h.includes('n')) y0=py;
-    if(h.includes('s')) y1=py;
-    if(h==='n' || h==='s'){ x0=sr.x; x1=ax; }
-    if(h==='e' || h==='w'){ y0=sr.y; y1=ay; }
+    if(selectionDrag.keepRatio && h.length===2){
+      const ratio=Math.max(1e-6,Number(selectionDrag.ratio)||1);
+      const fixedX=h.includes('w') ? ax : sr.x;
+      const fixedY=h.includes('n') ? ay : sr.y;
+      let newW=Math.max(1,Math.abs((px-fixedX)|0)+1);
+      let newH=Math.max(1,Math.abs((py-fixedY)|0)+1);
+      const dx=Math.abs((px-fixedX)|0);
+      const dy=Math.abs((py-fixedY)|0);
+      if(dx>=Math.round(dy*ratio)){
+        newH=Math.max(1,Math.round(newW/ratio));
+      }else{
+        newW=Math.max(1,Math.round(newH*ratio));
+      }
+      if(h.includes('w')){ x1=fixedX; x0=fixedX-(newW-1); }else{ x0=fixedX; x1=fixedX+(newW-1); }
+      if(h.includes('n')){ y1=fixedY; y0=fixedY-(newH-1); }else{ y0=fixedY; y1=fixedY+(newH-1); }
+      x0=clamp(x0|0,0,Math.max(0,(W-1)|0));
+      x1=clamp(x1|0,0,Math.max(0,(W-1)|0));
+      y0=clamp(y0|0,0,Math.max(0,(H-1)|0));
+      y1=clamp(y1|0,0,Math.max(0,(H-1)|0));
+    }else{
+      if(h.includes('w')) x0=px;
+      if(h.includes('e')) x1=px;
+      if(h.includes('n')) y0=py;
+      if(h.includes('s')) y1=py;
+      if(h==='n' || h==='s'){ x0=sr.x; x1=ax; }
+      if(h==='e' || h==='w'){ y0=sr.y; y1=ay; }
+    }
     if(x0>x1){ const t=x0; x0=x1; x1=t; }
     if(y0>y1){ const t=y0; y0=y1; y1=t; }
     const rect={ x:x0, y:y0, w:Math.max(1,(x1-x0+1)|0), h:Math.max(1,(y1-y0+1)|0) };
     selectionRect=rect;
-    const scaled=scaleBufferNearest(baseBuffer,rect.w,rect.h);
-    applySelectionPreview(baseFrames,rect,scaled);
+    if(selectionSourceBuffer){
+      selectionBuffer=scaleBufferNearest(selectionSourceBuffer,rect.w,rect.h);
+    }
+    renderCurrent();
+    syncSelectionOverlay();
+    syncSelectUI();
     return;
   }
 }
@@ -864,7 +949,26 @@ function onSelectPointerUp(e){
   if(!selectionDrag || !selectionDrag.active) return;
   if(e.pointerId!==selectionDrag.pointerId) return;
   try{ if(selectOverlayEl) selectOverlayEl.releasePointerCapture(e.pointerId); }catch{}
-  endSelectionDrag(e);
+  const kind=selectionDrag.kind;
+  const moved=Boolean(selectionDrag.moved);
+  selectionDrag=null;
+  if(kind==='marquee'){
+    if(moved && selectionRect){
+      selectionOriginRect={ x:selectionRect.x|0, y:selectionRect.y|0, w:selectionRect.w|0, h:selectionRect.h|0 };
+      selectionBaseFrames=cloneFramesLocal();
+      selectionSourceBuffer=captureSelectionBufferFrom(selectionBaseFrames,selectionOriginRect);
+      selectionBuffer=selectionSourceBuffer;
+      renderCurrent();
+    }else{
+      selectionRect=null;
+      selectionOriginRect=null;
+      selectionBaseFrames=null;
+      selectionSourceBuffer=null;
+      selectionBuffer=null;
+    }
+  }
+  syncSelectionOverlay();
+  syncSelectUI();
 }
 if(selectOverlayEl){
   selectOverlayEl.addEventListener('pointerdown',onSelectPointerDown);
@@ -878,47 +982,42 @@ if(selectOverlayEl){
 }
 if(selectBtnEl) selectBtnEl.addEventListener('click',toggleSelectMode);
 if(selectExitEl) selectExitEl.addEventListener('click',closeSelectMode);
-if(selectClearEl) selectClearEl.addEventListener('click',clearSelection);
+if(selectClearEl) selectClearEl.addEventListener('click',()=>clearSelection({ commit:true }));
 if(selectCopyEl) selectCopyEl.addEventListener('click',()=>{
   if(!selectionHas()) return;
-  selectionClipboard=selectionBuffer ?? captureSelectionBuffer(selectionRect);
+  selectionClipboard=cloneSelectionBuffer(selectionBuffer);
   syncSelectUI();
 });
 if(selectCutEl) selectCutEl.addEventListener('click',()=>{
   if(!selectionHas()) return;
   pushHistory();
-  selectionClipboard=selectionBuffer ?? captureSelectionBuffer(selectionRect);
-  for(let fi=0;fi<4;fi++){
-    const dst=frames[fi];
-    for(let oy=0;oy<selectionRect.h;oy++){
-      const dy=selectionRect.y+oy;
-      if(dy<0||dy>=H) continue;
-      const row=dy*W;
-      for(let ox=0;ox<selectionRect.w;ox++){
-        const dx=selectionRect.x+ox;
-        if(dx<0||dx>=W) continue;
-        dst[row+dx]=0;
-      }
-    }
+  selectionClipboard=cloneSelectionBuffer(selectionBuffer);
+  if(selectionBaseFrames){
+    applyFramesLocal(selectionBaseFrames);
+    if(selectionOriginRect) clearRectInSnapshot(frames,selectionOriginRect);
+  }else if(selectionOriginRect){
+    clearRectInSnapshot(frames,selectionOriginRect);
   }
+  resetSelectionState();
   renderCurrent();
-  clearSelection();
   syncSelectUI();
 });
 if(selectPasteEl) selectPasteEl.addEventListener('click',()=>{
   if(!selectionClipboard) return;
-  pushHistory();
+  if(selectionHas()) clearSelection({ commit:true });
   const w=selectionClipboard.w|0;
   const h=selectionClipboard.h|0;
   const anchor=selectLastPos ? { x: selectLastPos.x|0, y: selectLastPos.y|0 } : { x: ((W/2)|0), y: ((H/2)|0) };
   const x=clamp((anchor.x-Math.floor(w/2))|0,0,Math.max(0,(W-w)|0));
   const y=clamp((anchor.y-Math.floor(h/2))|0,0,Math.max(0,(H-h)|0));
   selectionRect={ x, y, w, h };
-  selectionBuffer={ w, h, frames: selectionClipboard.frames.map(f=>new Uint8Array(f)) };
-  blitBufferAt(selectionRect,selectionBuffer);
+  selectionOriginRect=null;
+  selectionBaseFrames=cloneFramesLocal();
+  selectionSourceBuffer=cloneSelectionBuffer(selectionClipboard);
+  selectionBuffer=selectionSourceBuffer;
   renderCurrent();
-  syncSelectionOverlay();
   syncSelectUI();
+  syncSelectionOverlay();
 });
 window.addEventListener('keydown',(e)=>{
   if(!isSelectMode()) return;
@@ -930,7 +1029,7 @@ window.addEventListener('keydown',(e)=>{
   if(key==='c'){
     if(!selectionHas()) return;
     e.preventDefault();
-    selectionClipboard=selectionBuffer ?? captureSelectionBuffer(selectionRect);
+    selectionClipboard=cloneSelectionBuffer(selectionBuffer);
     syncSelectUI();
   }else if(key==='x'){
     if(!selectionHas()) return;
@@ -1318,12 +1417,18 @@ function bindAdvancedPanelDrag(){
     ensureAdvancedPanelPlacement();
     const containerRect=container.getBoundingClientRect();
     const panelRect=jitterPanelEl.getBoundingClientRect();
+    const cw=Math.max(1,container.clientWidth||1);
+    const ch=Math.max(1,container.clientHeight||1);
+    const scaleX=containerRect.width/cw;
+    const scaleY=containerRect.height/ch;
     advancedPanelDrag={
       pointerId:e.pointerId,
       startX:e.clientX,
       startY:e.clientY,
-      startLeft: panelRect.left-containerRect.left,
-      startTop: panelRect.top-containerRect.top,
+      startLeft: (panelRect.left-containerRect.left)/scaleX,
+      startTop: (panelRect.top-containerRect.top)/scaleY,
+      scaleX,
+      scaleY,
     };
     try{ jitterPanelEl.setPointerCapture(e.pointerId); }catch{}
     e.preventDefault();
@@ -1331,14 +1436,20 @@ function bindAdvancedPanelDrag(){
   jitterPanelEl.addEventListener('pointermove',(e)=>{
     if(!advancedPanelDrag) return;
     if(e.pointerId!==advancedPanelDrag.pointerId) return;
-    const dx=e.clientX-advancedPanelDrag.startX;
-    const dy=e.clientY-advancedPanelDrag.startY;
+    const dx=(e.clientX-advancedPanelDrag.startX)/(advancedPanelDrag.scaleX||1);
+    const dy=(e.clientY-advancedPanelDrag.startY)/(advancedPanelDrag.scaleY||1);
     const cw=container.clientWidth|0;
     const ch=container.clientHeight|0;
     const pw=jitterPanelEl.offsetWidth|0;
     const ph=jitterPanelEl.offsetHeight|0;
-    const left=clamp(Math.round(advancedPanelDrag.startLeft+dx),8,Math.max(8,cw-pw-8));
-    const top=clamp(Math.round(advancedPanelDrag.startTop+dy),8,Math.max(8,ch-ph-8));
+    const minVisibleX=Math.max(0,Math.round(pw*0.5));
+    const minVisibleY=Math.max(0,Math.round(ph*0.5));
+    const minLeft=-minVisibleX;
+    const maxLeft=(cw-minVisibleX)|0;
+    const minTop=-minVisibleY;
+    const maxTop=(ch-minVisibleY)|0;
+    const left=clamp(Math.round(advancedPanelDrag.startLeft+dx),minLeft,maxLeft);
+    const top=clamp(Math.round(advancedPanelDrag.startTop+dy),minTop,maxTop);
     jitterPanelEl.style.left=`${left}px`;
     jitterPanelEl.style.top=`${top}px`;
     jitterPanelEl.style.right='auto';
@@ -1704,9 +1815,24 @@ function setCanvasPanMode(on){
 }
 function openZoomMenu(){
   if(!zoomMenuEl || !zoomBtnEl) return;
+  zoomMenuEl.classList.remove('open-down');
   zoomMenuEl.classList.add('is-open');
   zoomBtnEl.classList.add('is-active');
   zoomBtnEl.setAttribute('aria-expanded','true');
+  window.requestAnimationFrame(()=>{
+    if(!zoomMenuEl || !zoomBtnEl) return;
+    if(!zoomMenuEl.classList.contains('is-open')) return;
+    const menuRect=zoomMenuEl.getBoundingClientRect();
+    const btnRect=zoomBtnEl.getBoundingClientRect();
+    const vh=window.innerHeight || document.documentElement.clientHeight || 0;
+    const spaceAbove=Math.max(0,btnRect.top);
+    const spaceBelow=Math.max(0,vh-btnRect.bottom);
+    const need=Math.ceil(menuRect.height)+8;
+    if(spaceAbove<need && spaceBelow>=need){
+      zoomMenuEl.classList.add('open-down');
+    }
+    applyStageScale();
+  });
   applyStageScale();
 }
 function closeZoomMenu(){

@@ -27,10 +27,11 @@ export function centerModal(modalEl){
   const mh=modalEl.clientHeight;
   const cw=card.offsetWidth;
   const ch=card.offsetHeight;
-  const minLeft=Math.round(-cw*0.5);
-  const maxLeft=Math.round(mw-cw*0.5);
-  const minTop=-ch;
-  const maxTop=mh;
+  const minVisible=24;
+  const minLeft=Math.round(-(cw-minVisible));
+  const maxLeft=Math.round(mw-minVisible);
+  const minTop=Math.round(-(ch-minVisible));
+  const maxTop=Math.round(mh-minVisible);
   const left=clamp(Math.round((mw-cw)/2),minLeft,maxLeft);
   const top=clamp(Math.round((mh-ch)/2),minTop,maxTop);
   card.style.left=`${left}px`;
@@ -55,6 +56,7 @@ export function makeModalDraggable(modalEl){
   if(!modalEl || !card || !head) return;
   let dragging=false;
   let startX=0, startY=0, startLeft=0, startTop=0;
+  let scaleX=1, scaleY=1;
   head.addEventListener('pointerdown',(e)=>{
     if(e.button!==0) return;
     if(!modalEl.classList.contains('is-open')) return;
@@ -62,31 +64,46 @@ export function makeModalDraggable(modalEl){
     dragging=true;
     const rect=modalEl.getBoundingClientRect();
     const cardRect=card.getBoundingClientRect();
+    const mw=Math.max(1,modalEl.clientWidth||1);
+    const mh=Math.max(1,modalEl.clientHeight||1);
+    scaleX=rect.width/mw;
+    scaleY=rect.height/mh;
     startX=e.clientX;
     startY=e.clientY;
-    startLeft=cardRect.left-rect.left;
-    startTop=cardRect.top-rect.top;
+    startLeft=(cardRect.left-rect.left)/scaleX;
+    startTop=(cardRect.top-rect.top)/scaleY;
     head.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
   head.addEventListener('pointermove',(e)=>{
     if(!dragging) return;
-    const dx=e.clientX-startX;
-    const dy=e.clientY-startY;
+    const dx=(e.clientX-startX)/scaleX;
+    const dy=(e.clientY-startY)/scaleY;
     const mw=modalEl.clientWidth;
     const mh=modalEl.clientHeight;
     const cw=card.offsetWidth;
     const ch=card.offsetHeight;
-    const minLeft=Math.round(-cw*0.5);
-    const maxLeft=Math.round(mw-cw*0.5);
-    const minTop=-ch;
-    const maxTop=mh;
-    const left=clamp(Math.round(startLeft+dx),minLeft,maxLeft);
-    const top=clamp(Math.round(startTop+dy),minTop,maxTop);
+    const minVisible=24;
+    const minLeft=Math.round(-(cw-minVisible));
+    const maxLeft=Math.round(mw-minVisible);
+    const minTop=Math.round(-(ch-minVisible));
+    const maxTop=Math.round(mh-minVisible);
+    const unclampedLeft=Math.round(startLeft+dx);
+    const unclampedTop=Math.round(startTop+dy);
+    const left=clamp(unclampedLeft,minLeft,maxLeft);
+    const top=clamp(unclampedTop,minTop,maxTop);
     card.style.left=`${left}px`;
     card.style.top=`${top}px`;
     const key=modalEl.id || 'modal';
     modalPositions.set(key,{ left, top });
+    if(left!==unclampedLeft){
+      startX=e.clientX;
+      startLeft=left;
+    }
+    if(top!==unclampedTop){
+      startY=e.clientY;
+      startTop=top;
+    }
   });
   function endDrag(e){
     if(!dragging) return;
