@@ -1154,6 +1154,41 @@ function toggleLayerMode(){
   if(isLayerMode()) closeLayerMode();
   else openLayerMode();
 }
+const LAYER_THUMB_W=92;
+const LAYER_THUMB_H=52;
+let layerDrag=null;
+let layerJustDraggedUntil=0;
+function buildColorRgbCache(){
+  const cache=new Array((MAX_COLOR_INDEX|0)+1);
+  for(let i=1;i<cache.length;i++){
+    const hex=colorMap[i];
+    if(hex) cache[i]=hexToRGB(hex);
+  }
+  return cache;
+}
+function renderLayerThumb(canvasEl,frame,rgbCache){
+  const c=canvasEl.getContext('2d');
+  if(!c) return;
+  const tw=canvasEl.width|0;
+  const th=canvasEl.height|0;
+  const img=c.createImageData(tw,th);
+  const data=img.data;
+  for(let y=0;y<th;y++){
+    const sy=Math.floor(y*H/th);
+    for(let x=0;x<tw;x++){
+      const sx=Math.floor(x*W/tw);
+      const val=frame[sy*W+sx];
+      const o=(y*tw+x)*4;
+      if(val===0){
+        data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
+      }else{
+        const rgb=rgbCache[val] || hexToRGB(colorMap[val] || '#000000');
+        data[o]=rgb[0]; data[o+1]=rgb[1]; data[o+2]=rgb[2]; data[o+3]=255;
+      }
+    }
+  }
+  c.putImageData(img,0,0);
+}
 function syncLayerUI(){
   if(!layerListEl) return;
   const cel=getCurrentCel();
@@ -1164,6 +1199,7 @@ function syncLayerUI(){
   ensureCelModel(cel);
   clampActiveLayerIndex(cel);
   layerListEl.innerHTML='';
+  const rgbCache=buildColorRgbCache();
   for(let i=cel.layers.length-1;i>=0;i--){
     const layer=cel.layers[i];
     const item=document.createElement('div');
@@ -1171,7 +1207,11 @@ function syncLayerUI(){
     const vis=document.createElement('button');
     vis.type='button';
     vis.className='vis'+(layer.visible?'':' is-off');
-    vis.textContent=layer.visible?'开':'关';
+    vis.title=layer.visible?'隐藏图层':'显示图层';
+    vis.setAttribute('aria-label',layer.visible?'隐藏图层':'显示图层');
+    vis.innerHTML=layer.visible
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.9 4.2A10.4 10.4 0 0 1 12 5c6.5 0 10 7 10 7a18.7 18.7 0 0 1-4.2 5.3"/><path d="M6.6 6.6C3.9 8.5 2 12 2 12a18.7 18.7 0 0 0 7 6 10.4 10.4 0 0 0 9 .4"/></svg>`;
     vis.addEventListener('click',()=>{
       pushHistory();
       layer.visible=!layer.visible;
@@ -1179,11 +1219,19 @@ function syncLayerUI(){
       renderCurrent();
       syncLayerUI();
     });
-    const name=document.createElement('button');
-    name.type='button';
-    name.className='name'+(i===activeLayerIndex?' is-active':'');
-    name.textContent=layer.name||`图层${i+1}`;
-    name.addEventListener('click',()=>{
+    const thumbBtn=document.createElement('button');
+    thumbBtn.type='button';
+    thumbBtn.className='thumb-btn'+(i===activeLayerIndex?' is-active':'');
+    thumbBtn.title=layer.name || `图层${i+1}`;
+    thumbBtn.setAttribute('aria-label',layer.name || `图层${i+1}`);
+    const thumb=document.createElement('canvas');
+    thumb.width=LAYER_THUMB_W;
+    thumb.height=LAYER_THUMB_H;
+    thumb.className='layer-thumb';
+    renderLayerThumb(thumb,layer.frames[displayFrame] ?? layer.frames[3] ?? layer.frames[0],rgbCache);
+    thumbBtn.appendChild(thumb);
+    thumbBtn.addEventListener('click',()=>{
+      if(layerJustDraggedUntil && Date.now()<layerJustDraggedUntil) return;
       activeLayerIndex=i;
       applyWorkingFramesFromCel(cel);
       renderCurrent();
@@ -1214,7 +1262,7 @@ function syncLayerUI(){
     opRow.appendChild(op);
     opRow.appendChild(opLabel);
     item.appendChild(vis);
-    item.appendChild(name);
+    item.appendChild(thumbBtn);
     item.appendChild(opRow);
     layerListEl.appendChild(item);
   }
@@ -1269,6 +1317,31 @@ function layerMove(delta){
   renderCurrent();
   syncLayerUI();
 }
+function layerMoveInsert(fromDisplayIndex,insertDisplayIndex){
+  const cel=getCurrentCel();
+  if(!cel) return;
+  ensureCelModel(cel);
+  const n=cel.layers.length|0;
+  if(n<=1){
+    syncLayerUI();
+    return;
+  }
+  const fromD=clamp(fromDisplayIndex|0,0,Math.max(0,n-1));
+  const insD=clamp(insertDisplayIndex|0,0,n);
+  const fromL=(n-1-fromD)|0;
+  const moving=cel.layers[fromL];
+  if(!moving) return;
+  const active=cel.layers[activeLayerIndex|0];
+  pushHistory();
+  cel.layers.splice(fromL,1);
+  const toL=(n-1-insD)|0;
+  const safeTo=clamp(toL,0,cel.layers.length);
+  cel.layers.splice(safeTo,0,moving);
+  activeLayerIndex=Math.max(0,cel.layers.indexOf(active));
+  applyWorkingFramesFromCel(cel);
+  renderCurrent();
+  syncLayerUI();
+}
 function layerMergeDown(){
   const cel=getCurrentCel();
   if(!cel) return;
@@ -1292,6 +1365,143 @@ function layerMergeDown(){
   applyWorkingFramesFromCel(cel);
   renderCurrent();
   syncLayerUI();
+}
+function bindLayerListDrag(){
+  if(!layerListEl) return;
+  function getInsertIndex(clientY){
+    const items=[...layerListEl.querySelectorAll('.layer-item')];
+    if(items.length===0) return 0;
+    for(let i=0;i<items.length;i++){
+      const r=items[i].getBoundingClientRect();
+      const mid=(r.top+r.bottom)/2;
+      if(clientY<mid) return i;
+    }
+    return items.length;
+  }
+  function placePlaceholder(index){
+    if(!layerDrag || !layerDrag.placeholderEl) return;
+    const placeholder=layerDrag.placeholderEl;
+    const items=[...layerListEl.querySelectorAll('.layer-item')];
+    if(index>=items.length) layerListEl.appendChild(placeholder);
+    else layerListEl.insertBefore(placeholder,items[index]);
+  }
+  function startDrag(e,item,fromDisplayIndex){
+    if(layerDrag && layerDrag.active) return;
+    const rect=item.getBoundingClientRect();
+    const placeholder=document.createElement('div');
+    placeholder.className='layer-placeholder';
+    placeholder.style.height=`${rect.height}px`;
+    item.parentNode.insertBefore(placeholder,item);
+    const ghost=item.cloneNode(true);
+    ghost.classList.add('is-dragging');
+    ghost.style.position='fixed';
+    ghost.style.left=`${rect.left}px`;
+    ghost.style.top=`${rect.top}px`;
+    ghost.style.width=`${rect.width}px`;
+    ghost.style.height=`${rect.height}px`;
+    ghost.style.zIndex='10000';
+    ghost.style.pointerEvents='none';
+    ghost.style.margin='0';
+    document.body.appendChild(ghost);
+    item.remove();
+    layerDrag={
+      pointerId: e.pointerId,
+      fromDisplayIndex,
+      placeholderEl: placeholder,
+      ghostEl: ghost,
+      offsetX: e.clientX-rect.left,
+      offsetY: e.clientY-rect.top,
+      active: true,
+    };
+    layerListEl.setPointerCapture(e.pointerId);
+    layerJustDraggedUntil=Date.now()+250;
+    e.preventDefault();
+  }
+  function finishDrag(e,cancelled){
+    if(!layerDrag || layerDrag.pointerId!==e.pointerId) return;
+    const fromDisplayIndex=layerDrag.fromDisplayIndex|0;
+    const placeholder=layerDrag.placeholderEl;
+    const ghost=layerDrag.ghostEl;
+    let insertIndex=0;
+    for(const child of layerListEl.children){
+      if(child===placeholder) break;
+      if(child.classList && child.classList.contains('layer-item')) insertIndex++;
+    }
+    layerDrag=null;
+    try{ layerListEl.releasePointerCapture(e.pointerId); }catch{}
+    if(ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+    if(placeholder && placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+    if(cancelled){
+      syncLayerUI();
+      return;
+    }
+    layerMoveInsert(fromDisplayIndex,insertIndex);
+  }
+  layerListEl.addEventListener('pointerdown',(e)=>{
+    if(!isLayerMode()) return;
+    const cel=getCurrentCel();
+    if(!cel) return;
+    ensureCelModel(cel);
+    if((cel.layers.length|0)<=1) return;
+    const target=e.target;
+    if(target && target.closest && (target.closest('.vis') || target.closest('input[type="range"]'))) return;
+    const item=e.target.closest('.layer-item');
+    if(!item) return;
+    if(e.button!=null && e.button!==0) return;
+    const pointerId=e.pointerId;
+    const startX=e.clientX;
+    const startY=e.clientY;
+    const items=[...layerListEl.querySelectorAll('.layer-item')];
+    const fromDisplayIndex=Math.max(0,items.indexOf(item));
+    let started=false;
+    let timerId=0;
+    if(e.pointerType==='touch'){
+      timerId=window.setTimeout(()=>{
+        if(started) return;
+        started=true;
+        startDrag(e,item,fromDisplayIndex);
+      },220);
+    }
+    function onMove(ev){
+      if(ev.pointerId!==pointerId) return;
+      if(!started){
+        const dx=ev.clientX-startX;
+        const dy=ev.clientY-startY;
+        if(Math.hypot(dx,dy)>=6){
+          started=true;
+          if(timerId) window.clearTimeout(timerId);
+          startDrag(ev,item,fromDisplayIndex);
+        }
+        return;
+      }
+      if(!layerDrag || layerDrag.pointerId!==pointerId) return;
+      const ghost=layerDrag.ghostEl;
+      if(ghost){
+        ghost.style.left=`${ev.clientX-layerDrag.offsetX}px`;
+        ghost.style.top=`${ev.clientY-layerDrag.offsetY}px`;
+      }
+      placePlaceholder(getInsertIndex(ev.clientY));
+    }
+    function cleanup(){
+      if(timerId) window.clearTimeout(timerId);
+      window.removeEventListener('pointermove',onMove,true);
+      window.removeEventListener('pointerup',onUp,true);
+      window.removeEventListener('pointercancel',onCancel,true);
+    }
+    function onUp(ev){
+      if(ev.pointerId!==pointerId) return;
+      cleanup();
+      if(started) finishDrag(ev,false);
+    }
+    function onCancel(ev){
+      if(ev.pointerId!==pointerId) return;
+      cleanup();
+      if(started) finishDrag(ev,true);
+    }
+    window.addEventListener('pointermove',onMove,true);
+    window.addEventListener('pointerup',onUp,true);
+    window.addEventListener('pointercancel',onCancel,true);
+  });
 }
 function pointInRect(p,r){
   if(!r) return false;
@@ -1503,6 +1713,7 @@ if(layerDeleteEl) layerDeleteEl.addEventListener('click',layerDelete);
 if(layerUpEl) layerUpEl.addEventListener('click',()=>layerMove(1));
 if(layerDownEl) layerDownEl.addEventListener('click',()=>layerMove(-1));
 if(layerMergeDownEl) layerMergeDownEl.addEventListener('click',layerMergeDown);
+bindLayerListDrag();
 window.addEventListener('keydown',(e)=>{
   if(!isSelectMode()) return;
   if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA')) return;
@@ -2567,6 +2778,9 @@ function syncAnimUI(){ return timelineController.syncAnimUI(); }
 function stopTimelinePlayback(){ return timelineController.stopTimelinePlayback(); }
 function startTimelinePlayback(){ return timelineController.startTimelinePlayback(); }
 function bumpTimelineToken(){ timelineToken++; }
+applyTimelineFrame(timelineIndex);
+renderCurrent();
+syncLayerUI();
 
 cropController=createCropController({
   containerEl,

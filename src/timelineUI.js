@@ -52,8 +52,64 @@ export function createTimelineController(ctx){
   let animMultiSelectMode=false;
   let animJustDraggedUntil=0;
   let animDrag=null;
+  const ANIM_THUMB_W=32;
+  const ANIM_THUMB_H=24;
 
   if(makeModalDraggable) makeModalDraggable(animModalEl);
+
+  function buildColorRgbCache(){
+    const cache=new Array((maxColorIndex|0)+1);
+    for(let i=1;i<cache.length;i++){
+      const hex=colorMap[i];
+      if(hex) cache[i]=hexToRGB(hex);
+    }
+    return cache;
+  }
+  function renderCelThumb(canvasEl,cel,sub,rgbCache){
+    if(!cel) return;
+    const c=canvasEl.getContext('2d');
+    if(!c) return;
+    c.imageSmoothingEnabled=false;
+    const tw=canvasEl.width|0;
+    const th=canvasEl.height|0;
+    const w=getW()|0;
+    const h=getH()|0;
+    const img=c.createImageData(tw,th);
+    const data=img.data;
+    const hasLayers=cel && Array.isArray(cel.layers) && cel.layers.length>0;
+    const layers=hasLayers ? cel.layers : null;
+    const baseFrames=(!hasLayers && cel && Array.isArray(cel.frames)) ? cel.frames : null;
+    for(let y=0;y<th;y++){
+      const sy=Math.floor(y*h/th);
+      for(let x=0;x<tw;x++){
+        const sx=Math.floor(x*w/tw);
+        const idx=sy*w+sx;
+        let val=0;
+        if(layers){
+          for(let li=layers.length-1;li>=0;li--){
+            const layer=layers[li];
+            if(layer && layer.visible===false) continue;
+            const frames4=layer && Array.isArray(layer.frames) ? layer.frames : null;
+            const src=frames4 ? (frames4[sub] ?? frames4[0]) : null;
+            if(!(src instanceof Uint8Array) || src.length!==(w*h)) continue;
+            const pv=src[idx];
+            if(pv!==0){ val=pv; break; }
+          }
+        }else if(baseFrames){
+          const src=baseFrames[sub] ?? baseFrames[0];
+          if(src instanceof Uint8Array && src.length===(w*h)) val=src[idx];
+        }
+        const o=(y*tw+x)*4;
+        if(val===0){
+          data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
+        }else{
+          const rgb=rgbCache[val] || hexToRGB(colorMap[val] ?? '#000000');
+          data[o]=rgb[0]; data[o+1]=rgb[1]; data[o+2]=rgb[2]; data[o+3]=255;
+        }
+      }
+    }
+    c.putImageData(img,0,0);
+  }
 
   function applyTimelineFrame(i){
     const timeline=getTimeline();
@@ -131,6 +187,7 @@ export function createTimelineController(ctx){
     const timeline=getTimeline();
     const timelineIndex=getTimelineIndex();
     const timelineSelected=getTimelineSelected();
+    const rgbCache=buildColorRgbCache();
     animFrameListEl.innerHTML='';
     for(let i=0;i<timeline.length;i++){
       const btn=document.createElement('button');
@@ -139,8 +196,12 @@ export function createTimelineController(ctx){
       const active=i===timelineIndex;
       const selected=timelineSelected.has(i);
       btn.className='anim-frame-btn'+(active?' is-active':'')+(selected?' is-selected':'');
-      btn.textContent=String(i+1);
       btn.title=`第${i+1}帧（${Math.max(30,timeline[i]?.delay|0)}ms）`;
+      const thumb=document.createElement('canvas');
+      thumb.width=ANIM_THUMB_W;
+      thumb.height=ANIM_THUMB_H;
+      renderCelThumb(thumb,timeline[i],3,rgbCache);
+      btn.appendChild(thumb);
       btn.addEventListener('click',(e)=>{
         if(Date.now()<animJustDraggedUntil) return;
         if(isTimelinePlaying()) return;
