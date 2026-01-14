@@ -10,6 +10,45 @@ const stageEl=document.getElementById('stage');
 const containerEl=document.querySelector('.container');
 const zoomBtnEl=document.getElementById('zoomBtn');
 const zoomMenuEl=document.getElementById('zoomMenu');
+const touchHintEl=document.getElementById('touchHint');
+let touchHintTimer=null;
+function showTouchHint(text){
+  if(!touchHintEl) return;
+  const t=String(text||'').trim();
+  if(!t){
+    touchHintEl.classList.remove('is-visible');
+    touchHintEl.textContent='';
+    return;
+  }
+  touchHintEl.textContent=t;
+  touchHintEl.classList.add('is-visible');
+  if(touchHintTimer!=null) window.clearTimeout(touchHintTimer);
+  touchHintTimer=window.setTimeout(()=>{
+    touchHintEl.classList.remove('is-visible');
+  },900);
+}
+function hideTouchHint(){
+  if(!touchHintEl) return;
+  touchHintEl.classList.remove('is-visible');
+  if(touchHintTimer!=null) window.clearTimeout(touchHintTimer);
+  touchHintTimer=null;
+}
+document.addEventListener('pointerdown',(e)=>{
+  if(e.pointerType!=='touch') return;
+  const el=(e.target && e.target.closest) ? e.target.closest('button,[role="button"]') : null;
+  if(!el) return;
+  const label=el.getAttribute('aria-label') || el.getAttribute('title') || '';
+  if(!label) return;
+  showTouchHint(label);
+},{capture:true});
+document.addEventListener('pointerup',(e)=>{
+  if(e.pointerType!=='touch') return;
+  hideTouchHint();
+},{capture:true});
+document.addEventListener('pointercancel',(e)=>{
+  if(e.pointerType!=='touch') return;
+  hideTouchHint();
+},{capture:true});
 function applyStageScale(){
   const vv=window.visualViewport;
   const vw=(vv && Number.isFinite(vv.width) && vv.width>0) ? vv.width : (document.documentElement && document.documentElement.clientWidth) ? document.documentElement.clientWidth : (window.innerWidth||0);
