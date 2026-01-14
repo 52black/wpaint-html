@@ -2309,7 +2309,7 @@ document.querySelectorAll('#colorPage input[type=color]').forEach(input=>{
 });
 function syncOutlineColorsUI(){
   if(!outlineColorsEl) return;
-  outlineColorsEl.style.display=(separateOutlineEl && separateOutlineEl.checked)?'flex':'none';
+  outlineColorsEl.style.display=(separateOutlineEl && separateOutlineEl.checked)?'grid':'none';
 }
 if(separateOutlineEl){
   separateOutlineEl.addEventListener('change',()=>{
@@ -2438,8 +2438,7 @@ function makeSchemeItem(scheme){
   btn.type='button';
   btn.className='action-btn scheme-item';
   btn.setAttribute('data-scheme-id',scheme.id);
-  const swatches=scheme.colors.slice(0,8).map(c=>`<span style="background:${c}"></span>`).join('');
-  btn.innerHTML=`<span>${scheme.name}</span><span class="swatches">${swatches}</span>`;
+  btn.textContent=scheme.name;
   btn.addEventListener('click',()=>{
     activeSchemeId=scheme.id;
     applyPaletteScheme(scheme.colors);

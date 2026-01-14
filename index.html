@@ -241,34 +241,9 @@
       <button id="back" class="action-btn">返回绘制</button>
     </div>
   </div>
-  <div id="outlineColors" class="outline-colors">
-    <div class="mini" title="勾线笔 1">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-      <input type="color" data-index="17">
-    </div>
-    <div class="mini" title="勾线笔 2">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
-      <input type="color" data-index="18">
-    </div>
-    <div class="mini" title="勾线笔 3">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c-4.5 0-8-3.2-8-7.6C4 8.8 7.5 6 10.6 6c.8-2 2.3-3 4-3 2.1 0 3.8 1.5 4.2 3.8C20.9 7.7 22 9.5 22 12c0 5-4 9-10 9Z"/></svg>
-      <input type="color" data-index="19">
-    </div>
-    <div class="mini" title="勾线笔 4">
-      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="7" cy="7" r="1.2"/><circle cx="12" cy="6" r="1"/><circle cx="17" cy="7.5" r="1.1"/><circle cx="6" cy="12" r="1"/><circle cx="11" cy="12" r="1.3"/><circle cx="16.5" cy="12.5" r="1"/><circle cx="7.5" cy="17" r="1.1"/><circle cx="12.5" cy="18" r="1"/><circle cx="18" cy="17" r="1.2"/></svg>
-      <input type="color" data-index="20">
-    </div>
-    <div class="mini" title="勾线笔 5">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M21 12h-3"/><path d="M12 21v-3"/><path d="M3 12h3"/><path d="M18.4 5.6l-2.1 2.1"/><path d="M7.7 16.3l-2.1 2.1"/><path d="M5.6 5.6l2.1 2.1"/><path d="M16.3 16.3l2.1 2.1"/></svg>
-      <input type="color" data-index="21">
-    </div>
-  </div>
   <div class="color-layout">
     <div class="color-side">
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <span>预览</span>
-        </div>
         <div class="preview-wrap">
           <div id="previewBg" class="preview-bg">
             <canvas id="preview" class="preview-canvas" width="152" height="112"></canvas>
@@ -281,6 +256,28 @@
       <div class="color-grid-head">
         <button id="schemeReset" type="button" class="action-btn">重置</button>
         <button id="schemeSave" type="button" class="action-btn">保存</button>
+      </div>
+      <div id="outlineColors" class="outline-colors">
+        <div class="mini" title="勾线笔 1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          <input type="color" data-index="17">
+        </div>
+        <div class="mini" title="勾线笔 2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+          <input type="color" data-index="18">
+        </div>
+        <div class="mini" title="勾线笔 3">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21c-4.5 0-8-3.2-8-7.6C4 8.8 7.5 6 10.6 6c.8-2 2.3-3 4-3 2.1 0 3.8 1.5 4.2 3.8C20.9 7.7 22 9.5 22 12c0 5-4 9-10 9Z"/></svg>
+          <input type="color" data-index="19">
+        </div>
+        <div class="mini" title="勾线笔 4">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="7" cy="7" r="1.2"/><circle cx="12" cy="6" r="1"/><circle cx="17" cy="7.5" r="1.1"/><circle cx="6" cy="12" r="1"/><circle cx="11" cy="12" r="1.3"/><circle cx="16.5" cy="12.5" r="1"/><circle cx="7.5" cy="17" r="1.1"/><circle cx="12.5" cy="18" r="1"/><circle cx="18" cy="17" r="1.2"/></svg>
+          <input type="color" data-index="20">
+        </div>
+        <div class="mini" title="勾线笔 5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M21 12h-3"/><path d="M12 21v-3"/><path d="M3 12h3"/><path d="M18.4 5.6l-2.1 2.1"/><path d="M7.7 16.3l-2.1 2.1"/><path d="M5.6 5.6l2.1 2.1"/><path d="M16.3 16.3l2.1 2.1"/></svg>
+          <input type="color" data-index="21">
+        </div>
       </div>
       <div class="color-grid">
         <div class="color-cell"><span class="role">背景色</span><input type="color" data-index="1"></div>
