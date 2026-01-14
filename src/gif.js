@@ -13,7 +13,8 @@ export function exportGif({ filename, frames, w, h, colorMap, maxColorIndex, tra
     const indices=exportFrames[i];
     const delay=jitterOn ? getJitterSubDelayMs(i%3) : 0;
     const options={ palette, delay };
-    options.transparent=0;
+    options.transparent=true;
+    options.transparentIndex=0;
     gif.writeFrame(indices,w,h,options);
   }
   gif.finish();

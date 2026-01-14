@@ -364,7 +364,8 @@ export function createTimelineController(ctx){
           const dt=Math.min(getJitterSubDelayMs(sub),remaining);
           const indicesRaw=hasLayers ? jitterFrames[sub] : cel.frames[sub];
           const options={ palette, delay: dt };
-          options.transparent=0;
+          options.transparent=true;
+          options.transparentIndex=0;
           gif.writeFrame(indicesRaw,w,h,options);
           remaining-=dt;
         }
