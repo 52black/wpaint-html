@@ -331,7 +331,6 @@ export function createTimelineController(ctx){
   }
 
   function exportAnimGif(){
-    const transparent=Boolean(toggleTransparentEl && toggleTransparentEl.checked);
     const palette=[];
     for(let i=0;i<=maxColorIndex;i++) palette[i]=hexToRGB(colorMap[i] ?? '#000000');
     const gif=GIFEncoder({ repeat: 0 });
@@ -364,17 +363,9 @@ export function createTimelineController(ctx){
         for(let sub=0;sub<3 && remaining>0;sub++){
           const dt=Math.min(getJitterSubDelayMs(sub),remaining);
           const indicesRaw=hasLayers ? jitterFrames[sub] : cel.frames[sub];
-          const indices=transparent ? indicesRaw : (()=>{
-            const out=new Uint8Array(indicesRaw.length);
-            for(let i=0;i<indicesRaw.length;i++){
-              const v=indicesRaw[i];
-              out[i]=v===0?1:v;
-            }
-            return out;
-          })();
           const options={ palette, delay: dt };
-          if(transparent) options.transparent=0;
-          gif.writeFrame(indices,w,h,options);
+          options.transparent=0;
+          gif.writeFrame(indicesRaw,w,h,options);
           remaining-=dt;
         }
       }

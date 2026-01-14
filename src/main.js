@@ -12,7 +12,9 @@ const zoomBtnEl=document.getElementById('zoomBtn');
 const zoomMenuEl=document.getElementById('zoomMenu');
 const touchHintEl=document.getElementById('touchHint');
 let touchHintTimer=null;
-function showTouchHint(text){
+let touchHintPointerId=null;
+let touchHintHoldTimer=null;
+function showTouchHint(text,{ sticky=false }={}){
   if(!touchHintEl) return;
   const t=String(text||'').trim();
   if(!t){
@@ -23,32 +25,57 @@ function showTouchHint(text){
   touchHintEl.textContent=t;
   touchHintEl.classList.add('is-visible');
   if(touchHintTimer!=null) window.clearTimeout(touchHintTimer);
-  touchHintTimer=window.setTimeout(()=>{
-    touchHintEl.classList.remove('is-visible');
-  },900);
+  touchHintTimer=null;
+  if(!sticky){
+    touchHintTimer=window.setTimeout(()=>{
+      touchHintEl.classList.remove('is-visible');
+    },900);
+  }
 }
 function hideTouchHint(){
   if(!touchHintEl) return;
   touchHintEl.classList.remove('is-visible');
   if(touchHintTimer!=null) window.clearTimeout(touchHintTimer);
   touchHintTimer=null;
+  if(touchHintHoldTimer!=null) window.clearTimeout(touchHintHoldTimer);
+  touchHintHoldTimer=null;
+  touchHintPointerId=null;
 }
-document.addEventListener('pointerdown',(e)=>{
-  if(e.pointerType!=='touch') return;
-  const el=(e.target && e.target.closest) ? e.target.closest('button,[role="button"]') : null;
-  if(!el) return;
-  const label=el.getAttribute('aria-label') || el.getAttribute('title') || '';
-  if(!label) return;
-  showTouchHint(label);
-},{capture:true});
-document.addEventListener('pointerup',(e)=>{
-  if(e.pointerType!=='touch') return;
-  hideTouchHint();
-},{capture:true});
-document.addEventListener('pointercancel',(e)=>{
-  if(e.pointerType!=='touch') return;
-  hideTouchHint();
-},{capture:true});
+function bindTouchHintForButtons(){
+  if(!touchHintEl) return;
+  if(touchHintEl.parentNode!==document.body) document.body.appendChild(touchHintEl);
+  const HOLD_MS=160;
+  const onDown=(e)=>{
+    if(e.pointerType!=='touch') return;
+    if(e.button!=null && e.button!==0) return;
+    if(touchHintPointerId!=null) return;
+    const btn=e.currentTarget;
+    if(!(btn instanceof Element)) return;
+    const label=btn.getAttribute('aria-label') || btn.getAttribute('title') || '';
+    if(!label) return;
+    touchHintPointerId=e.pointerId;
+    if(touchHintHoldTimer!=null) window.clearTimeout(touchHintHoldTimer);
+    touchHintHoldTimer=window.setTimeout(()=>{
+      if(touchHintPointerId!==e.pointerId) return;
+      showTouchHint(label,{ sticky:true });
+    },HOLD_MS);
+    try{ btn.setPointerCapture(e.pointerId); }catch{}
+  };
+  const onUp=(e)=>{
+    if(touchHintPointerId==null) return;
+    if(e.pointerId!==touchHintPointerId) return;
+    const btn=e.currentTarget;
+    try{ if(btn && btn.releasePointerCapture) btn.releasePointerCapture(e.pointerId); }catch{}
+    hideTouchHint();
+  };
+  const btns=[...document.querySelectorAll('button,[role="button"]')];
+  for(const btn of btns){
+    btn.addEventListener('pointerdown',onDown);
+    btn.addEventListener('pointerup',onUp);
+    btn.addEventListener('pointercancel',onUp);
+  }
+}
+bindTouchHintForButtons();
 function applyStageScale(){
   const vv=window.visualViewport;
   const vw=(vv && Number.isFinite(vv.width) && vv.width>0) ? vv.width : (document.documentElement && document.documentElement.clientWidth) ? document.documentElement.clientWidth : (window.innerWidth||0);
