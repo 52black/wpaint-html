@@ -55,28 +55,31 @@ export function makeModalDraggable(modalEl){
   const head=getModalHead(modalEl);
   if(!modalEl || !card || !head) return;
   let dragging=false;
+  let dragPointerId=null;
   let startX=0, startY=0, startLeft=0, startTop=0;
   let scaleX=1, scaleY=1;
-  head.addEventListener('pointerdown',(e)=>{
-    if(e.button!==0) return;
-    if(!modalEl.classList.contains('is-open')) return;
-    if(e.target && e.target.closest && e.target.closest('button,input,select,textarea,a')) return;
-    dragging=true;
-    const rect=modalEl.getBoundingClientRect();
-    const cardRect=card.getBoundingClientRect();
-    const mw=Math.max(1,modalEl.clientWidth||1);
-    const mh=Math.max(1,modalEl.clientHeight||1);
-    scaleX=rect.width/mw;
-    scaleY=rect.height/mh;
-    startX=e.clientX;
-    startY=e.clientY;
-    startLeft=(cardRect.left-rect.left)/scaleX;
-    startTop=(cardRect.top-rect.top)/scaleY;
-    head.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  });
-  head.addEventListener('pointermove',(e)=>{
+  let dragMoveListener=null;
+  let dragUpListener=null;
+
+  function cleanupDrag(pointerId){
+    dragging=false;
+    dragPointerId=null;
+    try{
+      if(pointerId!=null) head.releasePointerCapture(pointerId);
+    }catch{}
+    if(dragMoveListener || dragUpListener){
+      try{ if(dragMoveListener) window.removeEventListener('pointermove',dragMoveListener,true); }catch{}
+      try{ if(dragUpListener) window.removeEventListener('pointerup',dragUpListener,true); }catch{}
+      try{ if(dragUpListener) window.removeEventListener('pointercancel',dragUpListener,true); }catch{}
+    }
+    dragMoveListener=null;
+    dragUpListener=null;
+  }
+
+  function onDragMove(e){
     if(!dragging) return;
+    if(dragPointerId!=null && e.pointerId!==dragPointerId) return;
+    e.preventDefault();
     const dx=(e.clientX-startX)/scaleX;
     const dy=(e.clientY-startY)/scaleY;
     const mw=modalEl.clientWidth;
@@ -104,12 +107,40 @@ export function makeModalDraggable(modalEl){
       startY=e.clientY;
       startTop=top;
     }
-  });
-  function endDrag(e){
-    if(!dragging) return;
-    dragging=false;
-    try{ head.releasePointerCapture(e.pointerId); }catch{}
   }
-  head.addEventListener('pointerup',endDrag);
-  head.addEventListener('pointercancel',endDrag);
+
+  function onDragEnd(e){
+    if(!dragging) return;
+    if(e && dragPointerId!=null && e.pointerId!==dragPointerId) return;
+    cleanupDrag(e ? e.pointerId : dragPointerId);
+  }
+
+  head.addEventListener('pointerdown',(e)=>{
+    if(e.pointerType==='mouse' && e.button!==0) return;
+    if(!modalEl.classList.contains('is-open')) return;
+    if(e.target && e.target.closest && e.target.closest('button,input,select,textarea,a')) return;
+    if(dragging) cleanupDrag(dragPointerId);
+    dragging=true;
+    dragPointerId=e.pointerId;
+    const rect=modalEl.getBoundingClientRect();
+    const cardRect=card.getBoundingClientRect();
+    const mw=Math.max(1,modalEl.clientWidth||1);
+    const mh=Math.max(1,modalEl.clientHeight||1);
+    scaleX=rect.width/mw;
+    scaleY=rect.height/mh;
+    startX=e.clientX;
+    startY=e.clientY;
+    startLeft=(cardRect.left-rect.left)/scaleX;
+    startTop=(cardRect.top-rect.top)/scaleY;
+    try{ head.setPointerCapture(e.pointerId); }catch{}
+    dragMoveListener=onDragMove;
+    dragUpListener=onDragEnd;
+    window.addEventListener('pointermove',dragMoveListener,true);
+    window.addEventListener('pointerup',dragUpListener,true);
+    window.addEventListener('pointercancel',dragUpListener,true);
+    e.preventDefault();
+  });
+  head.addEventListener('pointermove',onDragMove);
+  head.addEventListener('pointerup',onDragEnd);
+  head.addEventListener('pointercancel',onDragEnd);
 }

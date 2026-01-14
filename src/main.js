@@ -75,6 +75,7 @@ let jitterLevel=0;
 let displayFrame=3;
 let animId=null;
 let drawing=false;
+let drawingPointerId=null;
 let last=null;
 let cropController=null;
 let activeSchemeId='';
@@ -1796,10 +1797,12 @@ canvas.addEventListener('pointerdown',e=>{
     startCanvasPan(e);
     return;
   }
+  if(drawing && drawingPointerId!=null && e.pointerId!==drawingPointerId) return;
   if(!pointerCanDraw(e)) return;
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
   drawing=true;
+  drawingPointerId=e.pointerId;
   jitterStrokeId=(jitterStrokeId+1)|0;
   jitterSegId=0;
   pushHistory();
@@ -1812,6 +1815,7 @@ canvas.addEventListener('pointermove',e=>{
   if(isCropMode()) return;
   if(canvasPanMode) return;
   if(!drawing) return;
+  if(drawingPointerId!=null && e.pointerId!==drawingPointerId) return;
   e.preventDefault();
   const p=getPos(e);
   const val=getPaintValue();
@@ -1845,7 +1849,9 @@ function stopDrawing(e){
     return;
   }
   if(!drawing) return;
+  if(e && drawingPointerId!=null && e.pointerId!==drawingPointerId) return;
   drawing=false;
+  drawingPointerId=null;
   try{
     if(e && e.pointerId!=null) canvas.releasePointerCapture(e.pointerId);
   }catch{}
