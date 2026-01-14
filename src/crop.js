@@ -38,6 +38,7 @@ export function createCropController(ctx){
     resetHistory,
     applyBackground,
     applyPlaybackMode,
+    markCompositeDirty,
   }=ctx;
 
   let cropMode=false;
@@ -200,13 +201,26 @@ export function createCropController(ctx){
     const timeline=getTimeline ? getTimeline() : null;
     if(Array.isArray(timeline)){
       for(const cel of timeline){
-        if(!cel || !cel.frames) continue;
-        const nextFrames=[];
-        for(let fi=0;fi<4;fi++){
-          const src=cel.frames[fi];
-          nextFrames[fi]=cropArray(src,oldW,oldH,left,top,newW,newH);
+        if(!cel) continue;
+        if(Array.isArray(cel.layers) && cel.layers.length>0){
+          for(const layer of cel.layers){
+            if(!layer || !Array.isArray(layer.frames)) continue;
+            const nextLayerFrames=[];
+            for(let fi=0;fi<4;fi++){
+              const src=layer.frames[fi];
+              nextLayerFrames[fi]=cropArray(src,oldW,oldH,left,top,newW,newH);
+            }
+            layer.frames=nextLayerFrames;
+          }
+          cel.frames=[new Uint8Array(newW*newH),new Uint8Array(newW*newH),new Uint8Array(newW*newH),new Uint8Array(newW*newH)];
+        }else if(cel.frames){
+          const nextFrames=[];
+          for(let fi=0;fi<4;fi++){
+            const src=cel.frames[fi];
+            nextFrames[fi]=cropArray(src,oldW,oldH,left,top,newW,newH);
+          }
+          cel.frames=nextFrames;
         }
-        cel.frames=nextFrames;
       }
     }
     if(setCanvasSize) setCanvasSize(newW,newH);
@@ -216,6 +230,7 @@ export function createCropController(ctx){
       setTimelineIndex(next);
       if(applyTimelineFrame) applyTimelineFrame(next);
     }
+    if(markCompositeDirty) markCompositeDirty();
     if(resetHistory) resetHistory();
     if(applyBackground) applyBackground();
     closeCrop();
@@ -259,8 +274,16 @@ export function createCropController(ctx){
     const timeline=getTimeline ? getTimeline() : null;
     if(Array.isArray(timeline)){
       for(const cel of timeline){
-        if(!cel || !Array.isArray(cel.frames)) continue;
-        for(const frame of cel.frames) scan(frame);
+        if(!cel) continue;
+        if(Array.isArray(cel.layers) && cel.layers.length>0){
+          for(const layer of cel.layers){
+            const frames4=layer && Array.isArray(layer.frames) ? layer.frames : null;
+            if(!frames4) continue;
+            for(const f of frames4) scan(f);
+          }
+        }else if(Array.isArray(cel.frames)){
+          for(const frame of cel.frames) scan(frame);
+        }
       }
     }
     if(maxX<0) return null;

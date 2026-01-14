@@ -32,6 +32,8 @@ export function createTimelineController(ctx){
     setTimelinePlaying,
     getDisplayFrame,
     setDisplayFrame,
+    ensureCelModel,
+    applyWorkingFramesFromCel,
   }=ctx;
 
   const animBtnEl=document.getElementById('animBtn');
@@ -57,8 +59,12 @@ export function createTimelineController(ctx){
     const timeline=getTimeline();
     const t=timeline && timeline[i];
     if(!t) return;
-    for(let fi=0;fi<4;fi++){
-      frames[fi]=t.frames[fi];
+    if(typeof ensureCelModel==='function') ensureCelModel(t);
+    if(typeof applyWorkingFramesFromCel==='function') applyWorkingFramesFromCel(t);
+    else{
+      for(let fi=0;fi<4;fi++){
+        frames[fi]=t.frames[fi];
+      }
     }
   }
 
@@ -105,7 +111,19 @@ export function createTimelineController(ctx){
   }
 
   function cloneTimelineFrame(src){
-    return { frames: src.frames.map(f=>new Uint8Array(f)), delay: src.delay|0 };
+    const out={ frames: src.frames.map(f=>new Uint8Array(f)), delay: src.delay|0 };
+    if(Array.isArray(src.layers) && src.layers.length>0){
+      out.layers=src.layers.map(l=>{
+        const frames4=Array.isArray(l.frames) ? l.frames : [];
+        return {
+          name: String(l.name||''),
+          visible: l.visible!==false,
+          opacity: (l.opacity==null ? 100 : Math.max(0,Math.min(100,Number(l.opacity)||0))),
+          frames: [0,1,2,3].map(i=>new Uint8Array(frames4[i] ?? frames4[0] ?? out.frames[i])),
+        };
+      });
+    }
+    return out;
   }
 
   function rebuildAnimFrameList(){
@@ -258,12 +276,33 @@ export function createTimelineController(ctx){
     const gif=GIFEncoder({ repeat: 0 });
     const w=getW()|0;
     const h=getH()|0;
+    function compositeFromLayers(cel,sub){
+      const layers=Array.isArray(cel.layers) ? cel.layers : [];
+      const len=(w*h)|0;
+      const out=new Uint8Array(len);
+      for(let i=0;i<len;i++){
+        let v=0;
+        for(let li=layers.length-1;li>=0;li--){
+          const layer=layers[li];
+          if(layer && layer.visible===false) continue;
+          const frames4=layer && Array.isArray(layer.frames) ? layer.frames : null;
+          const src=frames4 ? (frames4[sub] ?? frames4[0]) : null;
+          if(!(src instanceof Uint8Array) || src.length!==len) continue;
+          const pv=src[i];
+          if(pv!==0){ v=pv; break; }
+        }
+        out[i]=v;
+      }
+      return out;
+    }
     for(const cel of getTimeline()){
+      const hasLayers=cel && Array.isArray(cel.layers) && cel.layers.length>0;
+      const jitterFrames=hasLayers ? [compositeFromLayers(cel,0),compositeFromLayers(cel,1),compositeFromLayers(cel,2)] : null;
       let remaining=Math.max(30,cel.delay|0);
       while(remaining>0){
         for(let sub=0;sub<3 && remaining>0;sub++){
           const dt=Math.min(getJitterSubDelayMs(sub),remaining);
-          const indicesRaw=cel.frames[sub];
+          const indicesRaw=hasLayers ? jitterFrames[sub] : cel.frames[sub];
           const indices=transparent ? indicesRaw : (()=>{
             const out=new Uint8Array(indicesRaw.length);
             for(let i=0;i<indicesRaw.length;i++){
@@ -572,4 +611,3 @@ export function createTimelineController(ctx){
     startTimelinePlayback,
   };
 }
-

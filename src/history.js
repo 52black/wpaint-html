@@ -4,6 +4,8 @@ export function createHistoryController({
   redoBtn,
   renderCurrent,
   maxHistory=80,
+  captureSnapshot,
+  applySnapshot,
 }){
   const undoStack=[];
   const redoStack=[];
@@ -18,13 +20,23 @@ export function createHistoryController({
     }
   }
 
+  function capture(){
+    if(typeof captureSnapshot==='function') return captureSnapshot();
+    return cloneFrames();
+  }
+
+  function apply(snapshot){
+    if(typeof applySnapshot==='function') return applySnapshot(snapshot);
+    return applyFrames(snapshot);
+  }
+
   function syncUI(){
     if(undoBtn) undoBtn.disabled=undoStack.length===0;
     if(redoBtn) redoBtn.disabled=redoStack.length===0;
   }
 
   function pushHistory(){
-    undoStack.push(cloneFrames());
+    undoStack.push(capture());
     if(undoStack.length>maxHistory) undoStack.shift();
     redoStack.length=0;
     syncUI();
@@ -32,18 +44,18 @@ export function createHistoryController({
 
   function undo(){
     if(undoStack.length===0) return;
-    redoStack.push(cloneFrames());
+    redoStack.push(capture());
     const prev=undoStack.pop();
-    applyFrames(prev);
+    apply(prev);
     syncUI();
     renderCurrent();
   }
 
   function redo(){
     if(redoStack.length===0) return;
-    undoStack.push(cloneFrames());
+    undoStack.push(capture());
     const next=redoStack.pop();
-    applyFrames(next);
+    apply(next);
     syncUI();
     renderCurrent();
   }

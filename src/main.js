@@ -60,6 +60,11 @@ const frames=[
   new Uint8Array(W*H),
   new Uint8Array(W*H),
 ];
+let timeline=[{ frames:[frames[0],frames[1],frames[2],frames[3]], delay:360 }];
+let timelineIndex=0;
+let timelineToken=0;
+let timelineAnchor=0;
+let timelineSelected=new Set([0]);
 // 颜色映射：值 0~16 -> 颜色
 // 约定：值 1 为背景色，值 2 为前景色（第一只笔）
 const defaultColors=['#000000','#fafafa','#4b4b4b','#d4d4d4','#9d9d9d','#f9d381','#eaaf4d','#f9938a','#e75952','#9ad1f9','#58aeee','#8deda7','#44c55b','#c3a7e1','#9569c8','#bab5aa','#948e82','#000000','#000000','#000000','#000000','#000000'];
@@ -108,6 +113,29 @@ const separateOutlineEl=document.getElementById('separateOutline');
 const protectOutlineEl=document.getElementById('protectOutline');
 const outlineColorsEl=document.getElementById('outlineColors');
 const paletteToolsEl=document.getElementById('paletteTools');
+const paletteMoreToggleEl=document.getElementById('paletteMoreToggle');
+const paletteCollapseEl=document.getElementById('paletteCollapse');
+let paletteExpanded=false;
+function setPaletteExpanded(expanded){
+  paletteExpanded=Boolean(expanded);
+  if(containerEl){
+    containerEl.classList.toggle('palette-expanded',paletteExpanded);
+    containerEl.classList.toggle('palette-compact',!paletteExpanded);
+  }
+  if(paletteMoreToggleEl) paletteMoreToggleEl.style.display=paletteExpanded?'none':'';
+  if(paletteCollapseEl) paletteCollapseEl.style.display=paletteExpanded?'':'none';
+}
+if(containerEl) containerEl.classList.add('palette-compact');
+if(paletteMoreToggleEl){
+  paletteMoreToggleEl.addEventListener('click',()=>{
+    setPaletteExpanded(true);
+  });
+}
+if(paletteCollapseEl){
+  paletteCollapseEl.addEventListener('click',()=>{
+    setPaletteExpanded(false);
+  });
+}
 const patternPickerEl=document.querySelector('.pattern-picker');
 const patternSelectBtn=document.getElementById('patternSelect');
 const patternSelectLabelEl=document.getElementById('patternSelectLabel');
@@ -150,6 +178,8 @@ const selectPanelEl=document.getElementById('selectPanel');
 const selectCopyEl=document.getElementById('selectCopy');
 const selectCutEl=document.getElementById('selectCut');
 const selectPasteEl=document.getElementById('selectPaste');
+const selectUndoEl=document.getElementById('selectUndo');
+const selectRedoEl=document.getElementById('selectRedo');
 const selectKeepRatioEl=document.getElementById('selectKeepRatio');
 const selectTransparentEl=document.getElementById('selectTransparent');
 const selectClearEl=document.getElementById('selectClear');
@@ -158,6 +188,15 @@ const selectOverlayEl=document.getElementById('selectOverlay');
 const selectOverlayContentEl=document.getElementById('selectOverlayContent');
 const selectRectEl=document.getElementById('selectRect');
 const selectHandleEls=selectOverlayEl ? [...selectOverlayEl.querySelectorAll('.select-handle')] : [];
+const layerBtnEl=document.getElementById('layerBtn');
+const layerPanelEl=document.getElementById('layerPanel');
+const layerExitEl=document.getElementById('layerExit');
+const layerAddEl=document.getElementById('layerAdd');
+const layerDeleteEl=document.getElementById('layerDelete');
+const layerUpEl=document.getElementById('layerUp');
+const layerDownEl=document.getElementById('layerDown');
+const layerMergeDownEl=document.getElementById('layerMergeDown');
+const layerListEl=document.getElementById('layerList');
 let customBgUrl='';
 const outlineColorStore=Array.from({length: MAX_COLOR_INDEX+1},()=>null);
 for(let i=OUTLINE_FIRST;i<=OUTLINE_LAST;i++){
@@ -188,6 +227,26 @@ const historyController=createHistoryController({
   redoBtn,
   renderCurrent,
   maxHistory: MAX_HISTORY,
+  captureSnapshot: ()=>{
+    const idx=timelineIndex|0;
+    const cel=(Array.isArray(timeline) && timeline[idx]) ? timeline[idx] : null;
+    if(!cel) return { timelineIndex: idx, activeLayerIndex: activeLayerIndex|0, cel: null };
+    ensureCelModel(cel);
+    return { timelineIndex: idx, activeLayerIndex: activeLayerIndex|0, cel: cloneCelDeep(cel) };
+  },
+  applySnapshot: (snapshot)=>{
+    if(!snapshot || !Array.isArray(timeline) || timeline.length===0) return;
+    const idx=clamp(Number(snapshot.timelineIndex)||0,0,Math.max(0,timeline.length-1));
+    const nextCel=snapshot.cel;
+    if(nextCel) timeline[idx]=nextCel;
+    timelineIndex=idx;
+    timelineSelected=new Set([idx]);
+    timelineAnchor=idx;
+    activeLayerIndex=Number(snapshot.activeLayerIndex)||0;
+    applyTimelineFrame(idx);
+    syncAnimUI();
+    syncLayerUI();
+  },
 });
 function syncHistoryUI(){ return historyController.syncUI(); }
 function pushHistory(){ return historyController.pushHistory(); }
@@ -469,13 +528,177 @@ function render(frame){
 const previewCanvas=document.getElementById('preview');
 const previewCtx=previewCanvas.getContext('2d');
 previewCtx.imageSmoothingEnabled=false;
+let activeLayerIndex=0;
+let compositeDirty=true;
+let compositeScratchFrame=null;
+const bayer4=new Uint8Array([0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5]);
+let ditherMask=null;
+function rebuildDitherMask(){
+  const len=(W*H)|0;
+  if(!ditherMask || ditherMask.length!==len) ditherMask=new Uint8Array(len);
+  for(let y=0;y<H;y++){
+    const row=y*W;
+    const by=(y&3)<<2;
+    for(let x=0;x<W;x++){
+      ditherMask[row+x]=bayer4[by+(x&3)];
+    }
+  }
+}
+function markCompositeDirty(){ compositeDirty=true; }
+function getCurrentCel(){
+  if(!Array.isArray(timeline)) return null;
+  return timeline[timelineIndex|0] || null;
+}
+function ensureCelModel(cel){
+  if(!cel || typeof cel!=='object') return null;
+  const len=(W*H)|0;
+  if(!Array.isArray(cel.layers) || cel.layers.length===0){
+    const legacy=Array.isArray(cel.frames) && cel.frames.length===4 ? cel.frames : null;
+    const baseFrames=[0,1,2,3].map(i=>{
+      const f=legacy && legacy[i];
+      return (f instanceof Uint8Array && f.length===len) ? new Uint8Array(f) : new Uint8Array(len);
+    });
+    cel.layers=[{ name:'图层1', visible:true, opacity: 100, frames: baseFrames }];
+  }
+  for(let li=0;li<cel.layers.length;li++){
+    const layer=cel.layers[li] || {};
+    if(typeof layer.name!=='string' || !layer.name) layer.name=`图层${li+1}`;
+    layer.visible=layer.visible!==false;
+    if(layer.opacity==null) layer.opacity=100;
+    layer.opacity=Math.max(0,Math.min(100,Number(layer.opacity)||0));
+    if(!Array.isArray(layer.frames) || layer.frames.length!==4) layer.frames=[new Uint8Array(len),new Uint8Array(len),new Uint8Array(len),new Uint8Array(len)];
+    for(let fi=0;fi<4;fi++){
+      const f=layer.frames[fi];
+      if(!(f instanceof Uint8Array) || f.length!==len) layer.frames[fi]=new Uint8Array(len);
+    }
+    cel.layers[li]=layer;
+  }
+  if(!Array.isArray(cel.frames) || cel.frames.length!==4) cel.frames=[new Uint8Array(len),new Uint8Array(len),new Uint8Array(len),new Uint8Array(len)];
+  for(let fi=0;fi<4;fi++){
+    const f=cel.frames[fi];
+    if(!(f instanceof Uint8Array) || f.length!==len) cel.frames[fi]=new Uint8Array(len);
+  }
+  for(let li=0;li<cel.layers.length;li++){
+    const layer=cel.layers[li];
+    for(let fi=0;fi<4;fi++){
+      if(layer.frames[fi]===cel.frames[fi]) layer.frames[fi]=new Uint8Array(layer.frames[fi]);
+    }
+  }
+  return cel;
+}
+function clampActiveLayerIndex(cel){
+  ensureCelModel(cel);
+  const max=Math.max(0,(cel && cel.layers ? cel.layers.length : 1)-1);
+  activeLayerIndex=Math.max(0,Math.min(max,activeLayerIndex|0));
+}
+function rebuildCelComposite(cel){
+  ensureCelModel(cel);
+  const layers=cel.layers;
+  const len=(W*H)|0;
+  if(!ditherMask || ditherMask.length!==len) rebuildDitherMask();
+  for(let fi=0;fi<4;fi++){
+    const out=cel.frames[fi];
+    for(let i=0;i<len;i++){
+      let v=0;
+      for(let li=layers.length-1;li>=0;li--){
+        const layer=layers[li];
+        if(!layer.visible) continue;
+        const opacity=(layer.opacity==null ? 100 : (layer.opacity|0));
+        if(opacity<=0) continue;
+        const pv=layer.frames[fi][i];
+        if(pv===0) continue;
+        if(opacity>=100){ v=pv; break; }
+        const keepCount=((opacity*16)/100)|0;
+        if(keepCount<=0) continue;
+        if(ditherMask[i]<keepCount){ v=pv; break; }
+      }
+      out[i]=v;
+    }
+  }
+}
+function cloneCelDeep(cel){
+  ensureCelModel(cel);
+  const layers=cel.layers.map(l=>({
+    name: String(l.name||''),
+    visible: l.visible!==false,
+    opacity: (l.opacity==null ? 100 : Math.max(0,Math.min(100,Number(l.opacity)||0))),
+    frames: l.frames.map(f=>new Uint8Array(f)),
+  }));
+  return {
+    delay: Math.max(30,Number(cel.delay)||0),
+    layers,
+    frames: cel.frames.map(f=>new Uint8Array(f)),
+  };
+}
+function applyWorkingFramesFromCel(cel){
+  ensureCelModel(cel);
+  clampActiveLayerIndex(cel);
+  const layer=cel.layers[activeLayerIndex];
+  for(let fi=0;fi<4;fi++) frames[fi]=layer.frames[fi];
+  markCompositeDirty();
+}
+function rebuildCurrentCompositeIfNeeded(){
+  if(!compositeDirty) return;
+  const cel=getCurrentCel();
+  if(!cel) return;
+  rebuildCelComposite(cel);
+  compositeDirty=false;
+}
+function buildCompositeScratchFrame(fi,activeOverrideFrame){
+  const cel=getCurrentCel();
+  if(!cel || !activeOverrideFrame) return null;
+  ensureCelModel(cel);
+  const len=(W*H)|0;
+  if(!compositeScratchFrame || compositeScratchFrame.length!==len) compositeScratchFrame=new Uint8Array(len);
+  if(!ditherMask || ditherMask.length!==len) rebuildDitherMask();
+  const out=compositeScratchFrame;
+  const layers=cel.layers;
+  for(let i=0;i<len;i++){
+    let v=0;
+    for(let li=layers.length-1;li>=0;li--){
+      const layer=layers[li];
+      if(!layer.visible) continue;
+      const opacity=(layer.opacity==null ? 100 : (layer.opacity|0));
+      if(opacity<=0) continue;
+      const src=(li===activeLayerIndex) ? activeOverrideFrame : layer.frames[fi];
+      const pv=src[i];
+      if(pv===0) continue;
+      if(opacity>=100){ v=pv; break; }
+      const keepCount=((opacity*16)/100)|0;
+      if(keepCount<=0) continue;
+      if(ditherMask[i]<keepCount){ v=pv; break; }
+    }
+    out[i]=v;
+  }
+  return out;
+}
+function getCompositeFrame(fi){
+  const cel=getCurrentCel();
+  return (cel && cel.frames && cel.frames[fi]) ? cel.frames[fi] : frames[fi];
+}
+function isLayerMode(){
+  return Boolean(containerEl && containerEl.classList.contains('layer-mode'));
+}
 function renderPreview(){
   // 换色界面预览固定看“稳定帧” frame3
   // 直接按预览尺寸采样渲染，避免每次都生成 360x265 的大 ImageData（系统颜色选择器拖动时会卡）
   const pw=previewCanvas.width, ph=previewCanvas.height;
   const img=previewCtx.createImageData(pw,ph);
   const data=img.data;
-  const frame=frames[3];
+  let frame=null;
+  if(isSelectMode() && selectionHas() && selectionBaseFrames && selectionBuffer){
+    const transparentZero=Boolean(selectTransparentEl && selectTransparentEl.checked);
+    const base=selectionBaseFrames[3] ?? frames[3];
+    const need=(W*H)|0;
+    if(!selectScratchFrame || selectScratchFrame.length!==need) selectScratchFrame=new Uint8Array(need);
+    selectScratchFrame.set(base);
+    if(selectionOriginRect) clearRectInFrame(selectScratchFrame,selectionOriginRect);
+    blitBufferFrameAt(selectScratchFrame,selectionRect,selectionBuffer,3,{ transparentZero });
+    frame=buildCompositeScratchFrame(3,selectScratchFrame) ?? selectScratchFrame;
+  }else{
+    rebuildCurrentCompositeIfNeeded();
+    frame=getCompositeFrame(3);
+  }
   for(let y=0;y<ph;y++){
     const sy=Math.floor(y*H/ph);
     for(let x=0;x<pw;x++){
@@ -529,7 +752,7 @@ function blitBufferFrameAt(dstFrame,rect,buffer,fi,options){
 }
 function renderCurrent(){
   // 换色界面不显示绘画区，跳过大画布渲染，避免调色时卡顿
-  if(!container.classList.contains('color-mode')){
+  if(!containerEl || !containerEl.classList.contains('color-mode')){
     if(isSelectMode() && selectionHas() && selectionBaseFrames && selectionBuffer){
       const transparentZero=Boolean(selectTransparentEl && selectTransparentEl.checked);
       const base=selectionBaseFrames[displayFrame] ?? frames[displayFrame];
@@ -538,9 +761,11 @@ function renderCurrent(){
       selectScratchFrame.set(base);
       if(selectionOriginRect) clearRectInFrame(selectScratchFrame,selectionOriginRect);
       blitBufferFrameAt(selectScratchFrame,selectionRect,selectionBuffer,displayFrame,{ transparentZero });
-      render(selectScratchFrame);
+      const composite=buildCompositeScratchFrame(displayFrame,selectScratchFrame) ?? selectScratchFrame;
+      render(composite);
     }else{
-      render(frames[displayFrame]);
+      rebuildCurrentCompositeIfNeeded();
+      render(getCompositeFrame(displayFrame));
     }
   }
   renderPreview();
@@ -574,12 +799,14 @@ function applyPlaybackMode(){
   }
 }
 function drawSegment(from,to,val){
+  if(!from || !to) return;
   const size=toolSettings[currentTool]?.size ?? 1;
   const erasing=val===0;
   if(erasing){
     for(let fi=0;fi<4;fi++){
       drawLineValue(frames[fi],from,to,val,size);
     }
+    markCompositeDirty();
     return;
   }
   const baseJitter=(jitterLevel||0);
@@ -600,6 +827,7 @@ function drawSegment(from,to,val){
       }
     }
     patternController.stampPalette(frames[3],to.x,to.y,val,size);
+    markCompositeDirty();
     return;
   }
   if(currentTool==='blobby' || currentTool==='stippleTiny' || currentTool==='softLrg'){
@@ -616,6 +844,7 @@ function drawSegment(from,to,val){
       }
     }
     drawLineTool(frames[3],from,to,val,currentTool);
+    markCompositeDirty();
     return;
   }
   if(jitterActive){
@@ -631,6 +860,7 @@ function drawSegment(from,to,val){
     }
   }
   drawLineValue(frames[3],from,to,val,size);
+  markCompositeDirty();
 }
 function pointerCanDraw(e){
   if(e.button!=null && e.button!==0) return false;
@@ -644,6 +874,7 @@ let selectionBuffer=null;
 let selectionClipboard=null;
 let selectionDrag=null;
 let selectLastPos=null;
+let selectHistoryController=null;
 
 function isSelectMode(){
   return Boolean(containerEl && containerEl.classList.contains('select-mode'));
@@ -667,6 +898,7 @@ function applyFramesLocal(snapshot){
   for(let i=0;i<frames.length;i++){
     frames[i].set(snapshot[i]);
   }
+  markCompositeDirty();
 }
 function cloneSelectionBuffer(buffer){
   if(!buffer) return null;
@@ -674,6 +906,73 @@ function cloneSelectionBuffer(buffer){
   const h=buffer.h|0;
   const srcFrames=Array.isArray(buffer.frames)?buffer.frames:[];
   return { w, h, frames: [0,1,2,3].map(i=>new Uint8Array(srcFrames[i] ?? srcFrames[0] ?? new Uint8Array(w*h))) };
+}
+function createSelectHistoryController(){
+  const undoStack=[];
+  const redoStack=[];
+  function cloneRect(r){
+    if(!r) return null;
+    return { x:r.x|0, y:r.y|0, w:r.w|0, h:r.h|0 };
+  }
+  function captureSnapshot(includeFrames){
+    const withFrames=Boolean(includeFrames);
+    return {
+      includeFrames: withFrames,
+      frames: withFrames ? cloneFramesLocal() : null,
+      selectionRect: cloneRect(selectionRect),
+      selectionOriginRect: cloneRect(selectionOriginRect),
+      selectionBaseFrames: selectionBaseFrames ? selectionBaseFrames.map(f=>new Uint8Array(f)) : null,
+      selectionSourceBuffer: cloneSelectionBuffer(selectionSourceBuffer),
+      selectionBuffer: cloneSelectionBuffer(selectionBuffer),
+    };
+  }
+  function applySnapshot(snap){
+    if(snap && snap.frames) applyFramesLocal(snap.frames);
+    selectionRect=cloneRect(snap ? snap.selectionRect : null);
+    selectionOriginRect=cloneRect(snap ? snap.selectionOriginRect : null);
+    selectionBaseFrames=snap && snap.selectionBaseFrames ? snap.selectionBaseFrames.map(f=>new Uint8Array(f)) : null;
+    selectionSourceBuffer=cloneSelectionBuffer(snap ? snap.selectionSourceBuffer : null);
+    selectionBuffer=cloneSelectionBuffer(snap ? snap.selectionBuffer : null);
+    selectionDrag=null;
+    renderCurrent();
+    syncSelectionOverlay();
+    syncSelectUI();
+  }
+  function syncUI(){
+    if(selectUndoEl) selectUndoEl.disabled=undoStack.length===0;
+    if(selectRedoEl) selectRedoEl.disabled=redoStack.length===0;
+  }
+  function push(includeFrames){
+    undoStack.push(captureSnapshot(includeFrames));
+    if(undoStack.length>MAX_HISTORY) undoStack.shift();
+    redoStack.length=0;
+    syncUI();
+  }
+  function undo(){
+    if(undoStack.length===0) return;
+    const prev=undoStack.pop();
+    redoStack.push(captureSnapshot(prev && prev.includeFrames));
+    if(redoStack.length>MAX_HISTORY) redoStack.shift();
+    applySnapshot(prev);
+    syncUI();
+  }
+  function redo(){
+    if(redoStack.length===0) return;
+    const next=redoStack.pop();
+    undoStack.push(captureSnapshot(next && next.includeFrames));
+    if(undoStack.length>MAX_HISTORY) undoStack.shift();
+    applySnapshot(next);
+    syncUI();
+  }
+  function reset(){
+    undoStack.length=0;
+    redoStack.length=0;
+    syncUI();
+  }
+  if(selectUndoEl) selectUndoEl.addEventListener('click',undo);
+  if(selectRedoEl) selectRedoEl.addEventListener('click',redo);
+  syncUI();
+  return { push, undo, redo, reset, syncUI };
 }
 function captureSelectionBufferFrom(framesSrc,rect){
   const w=rect.w|0, h=rect.h|0;
@@ -709,6 +1008,7 @@ function clearRectInSnapshot(snapshot,rect){
       }
     }
   }
+  markCompositeDirty();
 }
 function blitBufferAt(rect,buffer,options){
   const transparentZero=Boolean(options && options.transparentZero);
@@ -730,6 +1030,7 @@ function blitBufferAt(rect,buffer,options){
       }
     }
   }
+  markCompositeDirty();
 }
 function scaleBufferNearest(buffer,nw,nh){
   const srcW=buffer.w|0, srcH=buffer.h|0;
@@ -795,10 +1096,11 @@ function resetSelectionState(){
   syncSelectionOverlay();
   syncSelectUI();
 }
-function commitSelectionToFrames(){
+function commitSelectionToFrames(historyPush){
   if(!selectionHas() || !selectionBaseFrames || !selectionBuffer) return false;
   const transparentZero=Boolean(selectTransparentEl && selectTransparentEl.checked);
-  pushHistory();
+  if(historyPush===undefined) pushHistory();
+  else if(typeof historyPush==='function') historyPush();
   applyFramesLocal(selectionBaseFrames);
   if(selectionOriginRect) clearRectInSnapshot(frames,selectionOriginRect);
   blitBufferAt(selectionRect,selectionBuffer,{ transparentZero });
@@ -806,15 +1108,17 @@ function commitSelectionToFrames(){
 }
 function clearSelection(options){
   const doCommit=Boolean(options && options.commit);
-  const committed=doCommit ? commitSelectionToFrames() : false;
+  const committed=doCommit ? commitSelectionToFrames(isSelectMode() && selectHistoryController ? ()=>selectHistoryController.push(true) : undefined) : false;
   resetSelectionState();
   if(committed) renderCurrent();
 }
 function openSelectMode(){
   if(!containerEl) return;
   if(isCropMode()) closeCrop();
+  if(isLayerMode()) closeLayerMode();
   if(canvasPanMode) setCanvasPanMode(false);
   containerEl.classList.add('select-mode');
+  if(selectHistoryController) selectHistoryController.reset();
   syncSelectionOverlay();
   syncSelectUI();
 }
@@ -822,10 +1126,172 @@ function closeSelectMode(){
   if(!containerEl) return;
   clearSelection({ commit:true });
   containerEl.classList.remove('select-mode');
+  if(selectHistoryController) selectHistoryController.reset();
 }
 function toggleSelectMode(){
   if(isSelectMode()) closeSelectMode();
   else openSelectMode();
+}
+function openLayerMode(){
+  if(!containerEl) return;
+  if(isCropMode()) closeCrop();
+  if(isSelectMode()) closeSelectMode();
+  if(canvasPanMode) setCanvasPanMode(false);
+  setPaletteExpanded(false);
+  closeZoomMenu();
+  containerEl.classList.add('layer-mode');
+  if(layerBtnEl) layerBtnEl.classList.add('is-active');
+  const cel=getCurrentCel();
+  if(cel) applyWorkingFramesFromCel(cel);
+  syncLayerUI();
+}
+function closeLayerMode(){
+  if(!containerEl) return;
+  containerEl.classList.remove('layer-mode');
+  if(layerBtnEl) layerBtnEl.classList.remove('is-active');
+}
+function toggleLayerMode(){
+  if(isLayerMode()) closeLayerMode();
+  else openLayerMode();
+}
+function syncLayerUI(){
+  if(!layerListEl) return;
+  const cel=getCurrentCel();
+  if(!cel){
+    layerListEl.innerHTML='';
+    return;
+  }
+  ensureCelModel(cel);
+  clampActiveLayerIndex(cel);
+  layerListEl.innerHTML='';
+  for(let i=cel.layers.length-1;i>=0;i--){
+    const layer=cel.layers[i];
+    const item=document.createElement('div');
+    item.className='layer-item';
+    const vis=document.createElement('button');
+    vis.type='button';
+    vis.className='vis'+(layer.visible?'':' is-off');
+    vis.textContent=layer.visible?'开':'关';
+    vis.addEventListener('click',()=>{
+      pushHistory();
+      layer.visible=!layer.visible;
+      markCompositeDirty();
+      renderCurrent();
+      syncLayerUI();
+    });
+    const name=document.createElement('button');
+    name.type='button';
+    name.className='name'+(i===activeLayerIndex?' is-active':'');
+    name.textContent=layer.name||`图层${i+1}`;
+    name.addEventListener('click',()=>{
+      activeLayerIndex=i;
+      applyWorkingFramesFromCel(cel);
+      renderCurrent();
+      syncLayerUI();
+    });
+    const opRow=document.createElement('div');
+    opRow.className='op-row';
+    const op=document.createElement('input');
+    op.type='range';
+    op.min='0';
+    op.max='100';
+    op.step='5';
+    op.value=String(layer.opacity==null ? 100 : Math.max(0,Math.min(100,Number(layer.opacity)||0)));
+    const opLabel=document.createElement('span');
+    opLabel.className='pill';
+    opLabel.textContent=`${op.value}%`;
+    op.addEventListener('input',()=>{
+      const v=Math.max(0,Math.min(100,Number(op.value)||0));
+      op.value=String(v);
+      opLabel.textContent=`${v}%`;
+    });
+    op.addEventListener('change',()=>{
+      pushHistory();
+      layer.opacity=Math.max(0,Math.min(100,Number(op.value)||0));
+      markCompositeDirty();
+      renderCurrent();
+    });
+    opRow.appendChild(op);
+    opRow.appendChild(opLabel);
+    item.appendChild(vis);
+    item.appendChild(name);
+    item.appendChild(opRow);
+    layerListEl.appendChild(item);
+  }
+  if(layerDeleteEl) layerDeleteEl.disabled=cel.layers.length<=1;
+  if(layerUpEl) layerUpEl.disabled=activeLayerIndex>=cel.layers.length-1;
+  if(layerDownEl) layerDownEl.disabled=activeLayerIndex<=0;
+  if(layerMergeDownEl) layerMergeDownEl.disabled=activeLayerIndex<=0;
+}
+function layerAdd(){
+  const cel=getCurrentCel();
+  if(!cel) return;
+  ensureCelModel(cel);
+  pushHistory();
+  const len=(W*H)|0;
+  const nextIndex=Math.min(cel.layers.length,activeLayerIndex+1);
+  const newLayer={
+    name:`图层${cel.layers.length+1}`,
+    visible:true,
+    opacity: 100,
+    frames:[new Uint8Array(len),new Uint8Array(len),new Uint8Array(len),new Uint8Array(len)],
+  };
+  cel.layers.splice(nextIndex,0,newLayer);
+  activeLayerIndex=nextIndex;
+  applyWorkingFramesFromCel(cel);
+  renderCurrent();
+  syncLayerUI();
+}
+function layerDelete(){
+  const cel=getCurrentCel();
+  if(!cel) return;
+  ensureCelModel(cel);
+  if(cel.layers.length<=1) return;
+  pushHistory();
+  cel.layers.splice(activeLayerIndex,1);
+  activeLayerIndex=Math.max(0,Math.min(activeLayerIndex,cel.layers.length-1));
+  applyWorkingFramesFromCel(cel);
+  renderCurrent();
+  syncLayerUI();
+}
+function layerMove(delta){
+  const cel=getCurrentCel();
+  if(!cel) return;
+  ensureCelModel(cel);
+  const from=activeLayerIndex|0;
+  const to=from+(delta|0);
+  if(to<0 || to>=cel.layers.length) return;
+  pushHistory();
+  const [layer]=cel.layers.splice(from,1);
+  cel.layers.splice(to,0,layer);
+  activeLayerIndex=to;
+  applyWorkingFramesFromCel(cel);
+  renderCurrent();
+  syncLayerUI();
+}
+function layerMergeDown(){
+  const cel=getCurrentCel();
+  if(!cel) return;
+  ensureCelModel(cel);
+  const from=activeLayerIndex|0;
+  if(from<=0 || from>=cel.layers.length) return;
+  pushHistory();
+  const upper=cel.layers[from];
+  const lower=cel.layers[from-1];
+  const len=(W*H)|0;
+  for(let fi=0;fi<4;fi++){
+    const u=upper.frames[fi];
+    const l=lower.frames[fi];
+    for(let i=0;i<len;i++){
+      const v=u[i];
+      if(v!==0) l[i]=v;
+    }
+  }
+  cel.layers.splice(from,1);
+  activeLayerIndex=from-1;
+  applyWorkingFramesFromCel(cel);
+  renderCurrent();
+  syncLayerUI();
 }
 function pointInRect(p,r){
   if(!r) return false;
@@ -847,6 +1313,7 @@ function onSelectPointerDown(e){
   const handleEl=e.target && e.target.closest ? e.target.closest('.select-handle') : null;
   const p=getPos(e);
   if(handleEl && selectionHas()){
+    if(selectHistoryController) selectHistoryController.push(false);
     const handle=handleEl.getAttribute('data-h')||'';
     const keepRatio=Boolean(selectKeepRatioEl && selectKeepRatioEl.checked) && handle.length===2;
     const ratio=(selectionRect && selectionRect.h>0) ? (selectionRect.w/selectionRect.h) : 1;
@@ -854,6 +1321,7 @@ function onSelectPointerDown(e){
     return;
   }
   if(selectionHas() && pointInRect(p,selectionRect)){
+    if(selectHistoryController) selectHistoryController.push(false);
     startSelectionDrag(e,'move',{});
     return;
   }
@@ -867,6 +1335,7 @@ function onSelectPointerDown(e){
   selectionBuffer=null;
   syncSelectionOverlay();
   syncSelectUI();
+  if(selectHistoryController) selectHistoryController.push(false);
   startSelectionDrag(e,'marquee',{ moved:false });
 }
 function onSelectPointerMove(e){
@@ -990,7 +1459,8 @@ if(selectCopyEl) selectCopyEl.addEventListener('click',()=>{
 });
 if(selectCutEl) selectCutEl.addEventListener('click',()=>{
   if(!selectionHas()) return;
-  pushHistory();
+  if(selectHistoryController) selectHistoryController.push(true);
+  else pushHistory();
   selectionClipboard=cloneSelectionBuffer(selectionBuffer);
   if(selectionBaseFrames){
     applyFramesLocal(selectionBaseFrames);
@@ -1004,7 +1474,13 @@ if(selectCutEl) selectCutEl.addEventListener('click',()=>{
 });
 if(selectPasteEl) selectPasteEl.addEventListener('click',()=>{
   if(!selectionClipboard) return;
-  if(selectionHas()) clearSelection({ commit:true });
+  const hadSelection=selectionHas();
+  if(selectHistoryController) selectHistoryController.push(hadSelection);
+  if(hadSelection){
+    const committed=commitSelectionToFrames(null);
+    resetSelectionState();
+    if(committed) renderCurrent();
+  }
   const w=selectionClipboard.w|0;
   const h=selectionClipboard.h|0;
   const anchor=selectLastPos ? { x: selectLastPos.x|0, y: selectLastPos.y|0 } : { x: ((W/2)|0), y: ((H/2)|0) };
@@ -1019,6 +1495,32 @@ if(selectPasteEl) selectPasteEl.addEventListener('click',()=>{
   syncSelectUI();
   syncSelectionOverlay();
 });
+if(!selectHistoryController && (selectUndoEl || selectRedoEl)) selectHistoryController=createSelectHistoryController();
+if(layerBtnEl) layerBtnEl.addEventListener('click',toggleLayerMode);
+if(layerExitEl) layerExitEl.addEventListener('click',closeLayerMode);
+if(layerAddEl) layerAddEl.addEventListener('click',layerAdd);
+if(layerDeleteEl) layerDeleteEl.addEventListener('click',layerDelete);
+if(layerUpEl) layerUpEl.addEventListener('click',()=>layerMove(1));
+if(layerDownEl) layerDownEl.addEventListener('click',()=>layerMove(-1));
+if(layerMergeDownEl) layerMergeDownEl.addEventListener('click',layerMergeDown);
+window.addEventListener('keydown',(e)=>{
+  if(!isSelectMode()) return;
+  if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA')) return;
+  const isMac=navigator.platform.toLowerCase().includes('mac');
+  const ctrl=isMac ? e.metaKey : e.ctrlKey;
+  if(!ctrl) return;
+  const key=(e.key||'').toLowerCase();
+  if(key==='z'){
+    e.preventDefault();
+    e.stopPropagation();
+    if(e.shiftKey) selectHistoryController && selectHistoryController.redo();
+    else selectHistoryController && selectHistoryController.undo();
+  }else if(key==='y'){
+    e.preventDefault();
+    e.stopPropagation();
+    selectHistoryController && selectHistoryController.redo();
+  }
+},{capture:true});
 window.addEventListener('keydown',(e)=>{
   if(!isSelectMode()) return;
   if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA')) return;
@@ -1162,8 +1664,8 @@ eraserBtn.addEventListener('click',()=>{ setTool('eraser'); });
 
 function clearCanvas(){
   if(!resizeModalEl) return;
-  if(resizeWEl) resizeWEl.value=String(W|0);
-  if(resizeHEl) resizeHEl.value=String(H|0);
+  if(resizeWEl) resizeWEl.value=String(Math.min(1000,W|0));
+  if(resizeHEl) resizeHEl.value=String(Math.min(750,H|0));
   openModal(resizeModalEl);
   try{ if(resizeWEl) resizeWEl.focus(); }catch{}
 }
@@ -1171,14 +1673,15 @@ function closeResizeModal(){
   if(!resizeModalEl) return;
   closeModal(resizeModalEl);
 }
-function parseResizeValue(v,fallback){
+function parseResizeValue(v,fallback,maxValue){
   const n=Math.round(Number(v));
   if(!Number.isFinite(n) || n<=0) return fallback|0;
-  return Math.max(1,Math.min(4096,n|0));
+  const max=Math.max(1,Number(maxValue)||1);
+  return Math.max(1,Math.min(max,n|0));
 }
 function clearAndResizeProject(newW,newH){
-  const w=Math.max(1,newW|0);
-  const h=Math.max(1,newH|0);
+  const w=Math.max(1,Math.min(1000,newW|0));
+  const h=Math.max(1,Math.min(750,newH|0));
   if(stopAnim) stopAnim();
   if(stopTimelinePlayback) stopTimelinePlayback();
   timelinePlaying=false;
@@ -1193,6 +1696,17 @@ function clearAndResizeProject(newW,newH){
       new Uint8Array(w*h),
     ];
     cel.frames=nextFrames;
+    if(Array.isArray(cel.layers) && cel.layers.length>0){
+      for(const layer of cel.layers){
+        if(!layer) continue;
+        layer.frames=[
+          new Uint8Array(w*h),
+          new Uint8Array(w*h),
+          new Uint8Array(w*h),
+          new Uint8Array(w*h),
+        ];
+      }
+    }
   }
   setCanvasSize(w,h);
   const len=t.length|0;
@@ -1209,8 +1723,8 @@ function clearAndResizeProject(newW,newH){
   syncAnimUI();
 }
 function applyResizeModal(){
-  const w=parseResizeValue(resizeWEl ? resizeWEl.value : null,W);
-  const h=parseResizeValue(resizeHEl ? resizeHEl.value : null,H);
+  const w=parseResizeValue(resizeWEl ? resizeWEl.value : null,W,1000);
+  const h=parseResizeValue(resizeHEl ? resizeHEl.value : null,H,750);
   clearAndResizeProject(w,h);
   closeResizeModal();
 }
@@ -1315,6 +1829,7 @@ function setCanvasSize(newW,newH){
     selectOverlayContentEl.style.width=`${W}px`;
     selectOverlayContentEl.style.height=`${H}px`;
   }
+  rebuildDitherMask();
 }
 async function saveWpaintProject(filename){
   const config=captureProjectConfig();
@@ -1357,9 +1872,11 @@ async function loadWpaintProjectFromFile(file){
   syncAnimUI();
 }
 function exportGif(filename){
+  rebuildCurrentCompositeIfNeeded();
+  const compositeFrames=[0,1,2,3].map(fi=>getCompositeFrame(fi));
   exportGifFile({
     filename,
-    frames,
+    frames: compositeFrames,
     w: W,
     h: H,
     colorMap,
@@ -2011,11 +2528,6 @@ if(aboutModalEl){
 window.addEventListener('keydown',(e)=>{
   if(e.key==='Escape' && aboutModalEl && aboutModalEl.classList.contains('is-open')) closeAbout();
 });
-let timeline=[{ frames:[frames[0],frames[1],frames[2],frames[3]], delay:360 }];
-let timelineIndex=0;
-let timelineToken=0;
-let timelineAnchor=0;
-let timelineSelected=new Set([0]);
 const timelineController=createTimelineController({
   clamp,
   openModal,
@@ -2046,6 +2558,8 @@ const timelineController=createTimelineController({
   setTimelinePlaying: (v)=>{ timelinePlaying=v; },
   getDisplayFrame: ()=>displayFrame,
   setDisplayFrame: (v)=>{ displayFrame=v; },
+  ensureCelModel,
+  applyWorkingFramesFromCel,
 });
 function applyTimelineFrame(i){ return timelineController.applyTimelineFrame(i); }
 function setTimelineIndex(i){ return timelineController.setTimelineIndexAndRender(i); }
@@ -2110,8 +2624,12 @@ function createPaletteButton(value){
 const paletteButtons=[];
 for(let i=1;i<=BASE_COLOR_COUNT;i++){
   const btn=createPaletteButton(i);
+  if(i>6) btn.classList.add('is-extra');
   paletteButtons.push(btn);
   paletteToolsEl.appendChild(btn);
+  if(i===6 && paletteMoreToggleEl && paletteToolsEl && paletteMoreToggleEl.parentNode!==paletteToolsEl){
+    paletteToolsEl.appendChild(paletteMoreToggleEl);
+  }
 }
 function syncPaletteButtonsColors(){
   for(const btn of paletteButtons){

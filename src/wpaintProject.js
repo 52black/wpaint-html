@@ -4,27 +4,85 @@ import { ensureWpaintName, downloadBlobAsFile } from './utils.js';
 export function encodeTimelineBin({ timeline, w, h }){
   const celCount=Array.isArray(timeline)?timeline.length:0;
   const frameLen=(w|0)*(h|0);
-  const total=16 + celCount*(4 + 4*frameLen);
+  const hasLayerModel=Array.isArray(timeline) && timeline.some(cel=>cel && Array.isArray(cel.layers) && cel.layers.length>0);
+  const hasOpacity=Array.isArray(timeline) && timeline.some(cel=>cel && Array.isArray(cel.layers) && cel.layers.some(l=>l && l.opacity!=null && Number(l.opacity)!==100));
+  if(!hasLayerModel){
+    const total=16 + celCount*(4 + 4*frameLen);
+    const buf=new ArrayBuffer(total);
+    const view=new DataView(buf);
+    const out=new Uint8Array(buf);
+    let o=0;
+    view.setUint32(o,0x57504131,true); o+=4;
+    view.setUint32(o,(w>>>0),true); o+=4;
+    view.setUint32(o,(h>>>0),true); o+=4;
+    view.setUint32(o,(celCount>>>0),true); o+=4;
+    for(let i=0;i<celCount;i++){
+      const cel=timeline[i];
+      const delay=Math.max(30,cel && cel.delay|0);
+      view.setUint32(o,(delay>>>0),true); o+=4;
+      const layer0=(cel && Array.isArray(cel.layers) && cel.layers.length===1) ? cel.layers[0] : null;
+      const frames4=layer0 && Array.isArray(layer0.frames) ? layer0.frames : (cel && cel.frames);
+      for(let fi=0;fi<4;fi++){
+        const f=frames4 && frames4[fi];
+        if(!(f instanceof Uint8Array) || f.length!==frameLen){
+          out.set(new Uint8Array(frameLen),o);
+          o+=frameLen;
+        }else{
+          out.set(f,o);
+          o+=frameLen;
+        }
+      }
+    }
+    return out;
+  }
+
+  const enc=new TextEncoder();
+  let total=16;
+  for(let i=0;i<celCount;i++){
+    const cel=timeline[i] || {};
+    const layers=Array.isArray(cel.layers) && cel.layers.length>0 ? cel.layers : [{ name:'图层1', visible:true, frames: cel.frames }];
+    total+=8;
+    for(const layer of layers){
+      const nameBytes=enc.encode(String(layer && layer.name ? layer.name : ''));
+      total+=1 + (hasOpacity ? 1 : 0) + 2 + nameBytes.length;
+      total+=4*frameLen;
+    }
+  }
   const buf=new ArrayBuffer(total);
   const view=new DataView(buf);
   const out=new Uint8Array(buf);
   let o=0;
-  view.setUint32(o,0x57504131,true); o+=4;
+  view.setUint32(o,(hasOpacity ? 0x57504133 : 0x57504132),true); o+=4;
   view.setUint32(o,(w>>>0),true); o+=4;
   view.setUint32(o,(h>>>0),true); o+=4;
   view.setUint32(o,(celCount>>>0),true); o+=4;
   for(let i=0;i<celCount;i++){
-    const cel=timeline[i];
+    const cel=timeline[i] || {};
     const delay=Math.max(30,cel && cel.delay|0);
     view.setUint32(o,(delay>>>0),true); o+=4;
-    for(let fi=0;fi<4;fi++){
-      const f=cel && cel.frames && cel.frames[fi];
-      if(!(f instanceof Uint8Array) || f.length!==frameLen){
-        out.set(new Uint8Array(frameLen),o);
-        o+=frameLen;
-      }else{
-        out.set(f,o);
-        o+=frameLen;
+    const layers=Array.isArray(cel.layers) && cel.layers.length>0 ? cel.layers : [{ name:'图层1', visible:true, frames: cel.frames }];
+    view.setUint32(o,(layers.length>>>0),true); o+=4;
+    for(const layer of layers){
+      const visible=(layer && layer.visible!==false) ? 1 : 0;
+      out[o]=visible; o+=1;
+      if(hasOpacity){
+        const opacity=(layer && layer.opacity!=null) ? Math.max(0,Math.min(100,Number(layer.opacity)||0)) : 100;
+        out[o]=opacity|0; o+=1;
+      }
+      const nameBytes=enc.encode(String(layer && layer.name ? layer.name : ''));
+      const nameLen=Math.min(65535,nameBytes.length)|0;
+      view.setUint16(o,(nameLen>>>0),true); o+=2;
+      out.set(nameBytes.subarray(0,nameLen),o); o+=nameLen;
+      const frames4=layer && Array.isArray(layer.frames) ? layer.frames : [];
+      for(let fi=0;fi<4;fi++){
+        const f=frames4[fi];
+        if(!(f instanceof Uint8Array) || f.length!==frameLen){
+          out.set(new Uint8Array(frameLen),o);
+          o+=frameLen;
+        }else{
+          out.set(f,o);
+          o+=frameLen;
+        }
       }
     }
   }
@@ -36,23 +94,54 @@ export function decodeTimelineBin(u8){
   const view=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
   let o=0;
   const magic=view.getUint32(o,true); o+=4;
-  if(magic!==0x57504131) return null;
+  if(magic!==0x57504131 && magic!==0x57504132 && magic!==0x57504133) return null;
   const w=view.getUint32(o,true)|0; o+=4;
   const h=view.getUint32(o,true)|0; o+=4;
   const celCount=view.getUint32(o,true)|0; o+=4;
   if(w<=0||h<=0||celCount<=0) return null;
   const frameLen=w*h;
-  const expected=16 + celCount*(4 + 4*frameLen);
-  if(u8.length<expected) return null;
   const nextTimeline=[];
-  for(let i=0;i<celCount;i++){
-    const delay=view.getUint32(o,true)|0; o+=4;
-    const frames4=[];
-    for(let fi=0;fi<4;fi++){
-      frames4.push(u8.slice(o,o+frameLen));
-      o+=frameLen;
+  if(magic===0x57504131){
+    const expected=16 + celCount*(4 + 4*frameLen);
+    if(u8.length<expected) return null;
+    for(let i=0;i<celCount;i++){
+      const delay=view.getUint32(o,true)|0; o+=4;
+      const frames4=[];
+      for(let fi=0;fi<4;fi++){
+        frames4.push(u8.slice(o,o+frameLen));
+        o+=frameLen;
+      }
+      nextTimeline.push({ frames: frames4, delay: Math.max(30,delay|0) });
     }
-    nextTimeline.push({ frames: frames4, delay: Math.max(30,delay|0) });
+    return { w, h, timeline: nextTimeline };
+  }
+  const dec=new TextDecoder();
+  for(let i=0;i<celCount;i++){
+    if(o+8>u8.length) return null;
+    const delay=view.getUint32(o,true)|0; o+=4;
+    const layerCount=view.getUint32(o,true)|0; o+=4;
+    const layers=[];
+    for(let li=0;li<layerCount;li++){
+      if(o+(magic===0x57504133 ? 4 : 3)>u8.length) return null;
+      const visible=Boolean(u8[o]); o+=1;
+      const opacity=(magic===0x57504133) ? (u8[o++]|0) : 100;
+      const nameLen=view.getUint16(o,true)|0; o+=2;
+      if(o+nameLen>u8.length) return null;
+      const name=nameLen>0 ? dec.decode(u8.slice(o,o+nameLen)) : '';
+      o+=nameLen;
+      const frames4=[];
+      for(let fi=0;fi<4;fi++){
+        if(o+frameLen>u8.length) return null;
+        frames4.push(u8.slice(o,o+frameLen));
+        o+=frameLen;
+      }
+      layers.push({ name, visible, opacity, frames: frames4 });
+    }
+    nextTimeline.push({
+      delay: Math.max(30,delay|0),
+      layers,
+      frames: [new Uint8Array(frameLen),new Uint8Array(frameLen),new Uint8Array(frameLen),new Uint8Array(frameLen)],
+    });
   }
   return { w, h, timeline: nextTimeline };
 }
@@ -117,4 +206,3 @@ export async function readWpaintProjectFile(file){
   }
   return { config, decoded, background };
 }
-
