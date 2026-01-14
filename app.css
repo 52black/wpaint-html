@@ -60,16 +60,14 @@ body { margin: 0; background: #000; display: grid; place-items: center; overflow
 .zoom-menu .pill { background: rgba(17,17,17,.92); color: #fff; }
 .container.crop-mode .toolbar-left { display: none; }
 .container.crop-mode .toolbar-right { display: none; }
-.container.crop-mode .sidebar-footer { display: grid; position: relative; z-index: 990; margin-top: 0; }
-.container.crop-mode .sidebar-footer > :not(.zoom-menu-wrap) { display: none; }
+.container.crop-mode .sidebar-footer { display: none; }
 .container.crop-mode .jitter-panel { display: none !important; }
 .container.crop-mode .zoom-menu { z-index: 991; }
 .container.select-mode .toolbar-left { display: none; }
 .container.select-mode .toolbar-right { display: none; }
 .container.select-mode .jitter-panel { display: none !important; }
 .container.select-mode .crop-panel { display: none; }
-.container.select-mode .sidebar-footer > :not(.zoom-menu-wrap) { display: none; }
-.container.select-mode .sidebar-footer { position: relative; z-index: 990; }
+.container.select-mode .sidebar-footer { display: none; }
 .container.select-mode .zoom-menu { z-index: 991; }
 .container.layer-mode .toolbar-left { display: none; }
 .container.layer-mode .toolbar-right { display: none; }
@@ -79,6 +77,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; overflow
 .container.layer-mode .select-panel { display: none; }
 .select-panel { z-index: 900; display: none; width: 136px; box-sizing: border-box; gap: 8px; padding: 10px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.92); font-size: 12px; margin-top: auto; box-shadow: 0 10px 28px rgba(0,0,0,.10); }
 .container.select-mode .select-panel { display: grid; }
+.container.select-mode .select-panel { height: 100%; margin-top: 0; padding: 8px; border: none; border-radius: 0; box-shadow: none; background: rgba(255,255,255,.92); align-content: start; }
 .select-panel .row { display: flex; align-items: center; gap: 6px; }
 .select-panel .row .action-btn { flex: 1; min-width: 0; box-shadow: none; }
 .select-panel .action-btn svg { width: 16px; height: 16px; display: block; }
@@ -116,6 +115,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; overflow
 .layer-panel .layer-item .op-row .pill { min-width: 34px; padding: 1px 6px; }
 .crop-panel { z-index: 900; display: none; width: 136px; box-sizing: border-box; gap: 8px; padding: 10px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.92); font-size: 12px; margin-top: auto; box-shadow: 0 10px 28px rgba(0,0,0,.10); }
 .container.crop-mode .crop-panel { display: grid; }
+.container.crop-mode .crop-panel { height: 100%; margin-top: 0; padding: 8px; border: none; border-radius: 0; box-shadow: none; background: rgba(255,255,255,.92); align-content: start; }
 .crop-panel .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .crop-panel .head strong { font-size: 13px; }
 .crop-panel .actions { display: flex; align-items: center; gap: 6px; }
