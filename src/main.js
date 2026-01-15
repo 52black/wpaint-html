@@ -6,6 +6,103 @@ import { createTimelineController } from './timelineUI.js';
 import { createHistoryController } from './history.js';
 import { clamp, openModal, closeModal, makeModalDraggable } from './modal.js';
 import { createPatternController } from './patterns.js';
+import color5DeckText from '../color5.deck?raw';
+const DEFAULT_SOUNDS={
+  click:"%%SND0Cu0S9vwL7xD3AAfyDPr+BvQH//sK9Af/9g7yC/3yE+4Q+vEX7RD49w/yDPn/BPkG/AAA/gE=",
+  pen2:"%%SND0AAAA/wAAAAAAAAABAAD////+/wAAAAABAAD////+AAABAAAAAAD+//8AAAAAAAAA/wAAAAAA/wAA/wAAAAECAQD+/fz9/wADBQQB//v4+f0CBggGAvz39vj/BgkJBP749vj/BggIAv35+f0AAwQBAP3+AAAA/v0AAgUEAPr2+AAIDQf+8/D3Aw4RCPnu7vkIEhEE9evu/AsUEQLz6+/8DBQRA/Tr7vkIExQK+u7r8v8NFBIG9+3r8gANFRMJ++/q7/oHEhUQBPbs6vD8CBMVEQX47eru+AUPFBMK/vLr7PP+CRETDgT78u/x+QMMEA4H/fTv8PkCCw8NBf318fT7AwkKCAL8+Pj8AAMEAwD+/wACAgD8+fk=",
+};
+let soundStrings={ ...DEFAULT_SOUNDS };
+let soundBuffers=new Map();
+let audioCtx=null;
+let audioMaster=null;
+const SOUND_ENABLED_STORAGE_KEY='wpaint.soundEnabled.v1';
+let soundEnabled=true;
+{
+  let saved=null;
+  try{ saved=localStorage.getItem(SOUND_ENABLED_STORAGE_KEY); }catch{}
+  if(saved==='0' || saved==='false') soundEnabled=false;
+}
+function setSoundEnabled(enabled){
+  soundEnabled=Boolean(enabled);
+  try{
+    localStorage.setItem(SOUND_ENABLED_STORAGE_KEY,soundEnabled?'1':'0');
+  }catch{}
+}
+function ensureAudio(){
+  if(audioCtx) return audioCtx;
+  const Ctx=window.AudioContext || window.webkitAudioContext;
+  if(!Ctx) return null;
+  try{
+    audioCtx=new Ctx({ sampleRate: 48000 });
+    audioMaster=audioCtx.createGain();
+    audioMaster.gain.value=0.22;
+    audioMaster.connect(audioCtx.destination);
+    return audioCtx;
+  }catch{
+    audioCtx=null;
+    audioMaster=null;
+    return null;
+  }
+}
+function decodeSnd0ToBuffer(ctx,snd){
+  const raw=String(snd||'');
+  const idx=raw.indexOf('%%SND0');
+  if(idx<0) return null;
+  const b64=raw.slice(idx+6);
+  let bytes=null;
+  try{ bytes=b64ToU8(b64); }catch{ return null; }
+  if(!bytes || bytes.length===0) return null;
+  const sampleRate=8000;
+  const buf=ctx.createBuffer(1,bytes.length,sampleRate);
+  const ch=buf.getChannelData(0);
+  for(let i=0;i<bytes.length;i++){
+    const v=bytes[i]&255;
+    const s=v>=128 ? v-256 : v;
+    ch[i]=s/128;
+  }
+  return buf;
+}
+function playSound(name){
+  if(!soundEnabled) return false;
+  const key=String(name||'');
+  const snd=soundStrings[key];
+  if(!snd) return false;
+  const ctx=ensureAudio();
+  if(!ctx || !audioMaster) return false;
+  try{ if(ctx.state!=='running') ctx.resume(); }catch{}
+  let buf=soundBuffers.get(key);
+  if(!buf){
+    buf=decodeSnd0ToBuffer(ctx,snd);
+    if(!buf) return false;
+    soundBuffers.set(key,buf);
+  }
+  try{
+    const src=ctx.createBufferSource();
+    src.buffer=buf;
+    src.connect(audioMaster);
+    src.start();
+    return true;
+  }catch{
+    return false;
+  }
+}
+function setSoundsFromDeckText(deckText){
+  const text=String(deckText||'');
+  const re=/([A-Za-z0-9_]+)\s*:\s*\"(%%SND0[^\"]+)\"/g;
+  let changed=false;
+  for(;;){
+    const m=re.exec(text);
+    if(!m) break;
+    const k=m[1];
+    const v=m[2];
+    if(!k || typeof v!=='string') continue;
+    soundStrings[k]=v;
+    soundBuffers.delete(k);
+    changed=true;
+  }
+  return changed;
+}
+setSoundsFromDeckText(color5DeckText);
 const stageEl=document.getElementById('stage');
 const containerEl=document.querySelector('.container');
 const zoomBtnEl=document.getElementById('zoomBtn');
@@ -353,6 +450,58 @@ const toolSettings={
   stippleTiny:{ size:5 },
   softLrg:{ size:15 },
 };
+const toolStrokeSounds={
+  pencil:['pencil1','pencil2'],
+  pen:['pen1','pen2'],
+  blobby:['wipe1','wipe2','wipe3'],
+  stippleTiny:['stip1','stip2','stip3'],
+  softLrg:['spray1','spray2'],
+  eraser:['erase1','erase2'],
+  palette:['squeak1','squeak2'],
+};
+function pickOne(arr){
+  if(!Array.isArray(arr) || arr.length===0) return null;
+  return arr[(Math.random()*arr.length)|0];
+}
+function playStrokeSound(tool){
+  const name=pickOne(toolStrokeSounds[tool]);
+  if(!name) return null;
+  const ok=playSound(name) || playSound('click');
+  return ok ? name : null;
+}
+let strokeSoundTimer=null;
+let strokeSoundPointerId=null;
+let strokeSoundTool=null;
+function stopStrokeSoundLoop(){
+  if(strokeSoundTimer!=null) window.clearTimeout(strokeSoundTimer);
+  strokeSoundTimer=null;
+  strokeSoundPointerId=null;
+  strokeSoundTool=null;
+}
+function startStrokeSoundLoop(tool,pointerId){
+  stopStrokeSoundLoop();
+  if(!soundEnabled) return;
+  strokeSoundTool=tool;
+  strokeSoundPointerId=pointerId;
+  const tick=()=>{
+    if(!soundEnabled) return stopStrokeSoundLoop();
+    if(!drawing) return stopStrokeSoundLoop();
+    if(strokeSoundPointerId==null || drawingPointerId==null || strokeSoundPointerId!==drawingPointerId) return stopStrokeSoundLoop();
+    const t=strokeSoundTool;
+    if(!t) return stopStrokeSoundLoop();
+    const playedName=playStrokeSound(t);
+    let delay=110;
+    if(playedName){
+      const buf=soundBuffers.get(playedName);
+      if(buf && Number.isFinite(buf.duration) && buf.duration>0){
+        delay=Math.round(buf.duration*1000*0.85);
+      }
+    }
+    delay=clamp(Number(delay)||110,45,260);
+    strokeSoundTimer=window.setTimeout(tick,delay);
+  };
+  tick();
+}
 const sizeEl=document.getElementById('size');
 const sizeValueEl=document.getElementById('sizeValue');
 const MAX_HISTORY=80;
@@ -363,6 +512,8 @@ const historyController=createHistoryController({
   renderCurrent,
   maxHistory: MAX_HISTORY,
   bindHotkeys: false,
+  onUndo: ()=>{ playSound('cancel') || playSound('click'); },
+  onRedo: ()=>{ playSound('snap') || playSound('click'); },
   captureSnapshot: ()=>{
     const idx=timelineIndex|0;
     const cel=(Array.isArray(timeline) && timeline[idx]) ? timeline[idx] : null;
@@ -1955,16 +2106,18 @@ if(selectOverlayEl){
   window.addEventListener('pointerup',onSelectPointerUp,true);
   window.addEventListener('pointercancel',onSelectPointerUp,true);
 }
-if(selectBtnEl) selectBtnEl.addEventListener('click',toggleSelectMode);
-if(selectExitEl) selectExitEl.addEventListener('click',closeSelectMode);
-if(selectClearEl) selectClearEl.addEventListener('click',()=>clearSelection({ commit:true }));
+if(selectBtnEl) selectBtnEl.addEventListener('click',()=>{ toggleSelectMode(); playSound('pick') || playSound('click'); });
+if(selectExitEl) selectExitEl.addEventListener('click',()=>{ closeSelectMode(); playSound('cancel') || playSound('click'); });
+if(selectClearEl) selectClearEl.addEventListener('click',()=>{ clearSelection({ commit:true }); playSound('wipe1') || playSound('click'); });
 if(selectCopyEl) selectCopyEl.addEventListener('click',()=>{
   if(!selectionHas()) return;
   selectionClipboard=cloneSelectionBuffer(selectionBuffer);
+  playSound('snap') || playSound('click');
   syncSelectUI();
 });
 if(selectCutEl) selectCutEl.addEventListener('click',()=>{
   if(!selectionHas()) return;
+  playSound('snap') || playSound('click');
   if(selectHistoryController) selectHistoryController.push(true);
   else pushHistory();
   selectionClipboard=cloneSelectionBuffer(selectionBuffer);
@@ -1980,6 +2133,7 @@ if(selectCutEl) selectCutEl.addEventListener('click',()=>{
 });
 if(selectPasteEl) selectPasteEl.addEventListener('click',()=>{
   if(!selectionClipboard) return;
+  playSound('snap') || playSound('click');
   const hadSelection=selectionHas();
   if(selectHistoryController) selectHistoryController.push(hadSelection);
   if(hadSelection){
@@ -2061,6 +2215,7 @@ canvas.addEventListener('pointerdown',e=>{
   jitterStrokeId=(jitterStrokeId+1)|0;
   jitterSegId=0;
   pushHistory();
+  startStrokeSoundLoop(currentTool,e.pointerId);
   last=getPos(e);
   const val=getPaintValue();
   const rect=drawSegment(last,last,val);
@@ -2102,12 +2257,14 @@ function stopDrawing(e){
       try{ if(canvasViewportEl) canvasViewportEl.releasePointerCapture(e.pointerId); }catch{}
       try{ canvas.releasePointerCapture(e.pointerId); }catch{}
     }
+    stopStrokeSoundLoop();
     return;
   }
   if(!drawing) return;
   if(e && drawingPointerId!=null && e.pointerId!==drawingPointerId) return;
   drawing=false;
   drawingPointerId=null;
+  stopStrokeSoundLoop();
   scheduleRender(null,{ skipPreview:false });
   try{
     if(e && e.pointerId!=null) canvas.releasePointerCapture(e.pointerId);
@@ -2129,15 +2286,21 @@ canvas.addEventListener('pointerup',stopDrawing);
 canvas.addEventListener('pointercancel',stopDrawing);
 canvas.addEventListener('pointerleave',stopDrawing);
 canvas.addEventListener('contextmenu',e=>{ e.preventDefault(); });
-penBtn.addEventListener('click',()=>{ setTool('pencil'); });
-pen2Btn.addEventListener('click',()=>{ setTool('pen'); });
-blobbyBtn.addEventListener('click',()=>{ setTool('blobby'); });
-stippleTinyBtn.addEventListener('click',()=>{ setTool('stippleTiny'); });
-softLrgBtn.addEventListener('click',()=>{ setTool('softLrg'); });
-eraserBtn.addEventListener('click',()=>{ setTool('eraser'); });
+function setToolWithSound(tool){
+  if(currentTool===tool) return;
+  setTool(tool);
+  playSound('pick') || playSound('click');
+}
+penBtn.addEventListener('click',()=>{ setToolWithSound('pencil'); });
+pen2Btn.addEventListener('click',()=>{ setToolWithSound('pen'); });
+blobbyBtn.addEventListener('click',()=>{ setToolWithSound('blobby'); });
+stippleTinyBtn.addEventListener('click',()=>{ setToolWithSound('stippleTiny'); });
+softLrgBtn.addEventListener('click',()=>{ setToolWithSound('softLrg'); });
+eraserBtn.addEventListener('click',()=>{ setToolWithSound('eraser'); });
 
 function clearCanvas(){
   if(!resizeModalEl) return;
+  playSound('snap') || playSound('click');
   if(resizeWEl) resizeWEl.value=String(Math.min(1000,W|0));
   if(resizeHEl) resizeHEl.value=String(Math.min(750,H|0));
   openModal(resizeModalEl);
@@ -2145,6 +2308,7 @@ function clearCanvas(){
 }
 function closeResizeModal(){
   if(!resizeModalEl) return;
+  playSound('cancel') || playSound('click');
   closeModal(resizeModalEl);
 }
 function parseResizeValue(v,fallback,maxValue){
@@ -2199,6 +2363,7 @@ function clearAndResizeProject(newW,newH){
 function applyResizeModal(){
   const w=parseResizeValue(resizeWEl ? resizeWEl.value : null,W,1000);
   const h=parseResizeValue(resizeHEl ? resizeHEl.value : null,H,750);
+  playSound('scratch') || playSound('click');
   clearAndResizeProject(w,h);
   closeResizeModal();
 }
@@ -2979,6 +3144,7 @@ const settingsTabShortcutsEl=document.getElementById('settingsTabShortcuts');
 const settingsPageGeneralEl=document.getElementById('settingsPageGeneral');
 const settingsPageAboutEl=document.getElementById('settingsPageAbout');
 const settingsPageShortcutsEl=document.getElementById('settingsPageShortcuts');
+const soundEnabledEl=document.getElementById('soundEnabled');
 const fullscreenToggleEl=document.getElementById('fullscreenToggle');
 const fullscreenStateEl=document.getElementById('fullscreenState');
 const shortcutsListEl=document.getElementById('shortcutsList');
@@ -3045,6 +3211,13 @@ async function toggleFullscreen(){
 if(fullscreenToggleEl) fullscreenToggleEl.addEventListener('click',toggleFullscreen);
 document.addEventListener('fullscreenchange',syncFullscreenUI);
 syncFullscreenUI();
+if(soundEnabledEl){
+  soundEnabledEl.checked=Boolean(soundEnabled);
+  soundEnabledEl.addEventListener('change',()=>{
+    setSoundEnabled(soundEnabledEl.checked);
+    if(!soundEnabled) stopStrokeSoundLoop();
+  });
+}
 
 function normalizeShortcutKey(raw){
   const key=String(raw||'');
@@ -3503,8 +3676,10 @@ function createPaletteButton(value){
   btn.title=`颜色${value}`;
   btn.innerHTML=`<span class="wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a9 9 0 1 0 0 18c2.2 0 3-1 3-2.5S14 16 12.5 16H12a2 2 0 0 1 0-4h1.2c1.9 0 3.8-1.5 3.8-4.2A4.8 4.8 0 0 0 12 3Z"/><path d="M7.5 10.5h.01"/><path d="M9.5 7.5h.01"/><path d="M14.5 7.5h.01"/><path d="M16.5 10.5h.01"/></svg><span class="swatch"></span></span>`;
   btn.addEventListener('click',()=>{
+    const changed=(currentTool!=='palette') || (paletteValue!==value);
     paletteValue=value;
     setTool('palette');
+    if(changed) playSound('pick') || playSound('click');
   });
   return btn;
 }
@@ -3845,6 +4020,7 @@ function remapDeckFrameInPlace(frame){
 
 async function importDeckFromFile(file){
   const deckText=await file.text();
+  setSoundsFromDeckText(deckText);
   const deckPalette=extractDeckPalette16FromPatterns(deckText);
   if(deckPalette){
     const swappedPalette=deckPalette.slice();

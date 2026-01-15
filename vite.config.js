@@ -1,12 +1,17 @@
 import { defineConfig } from 'vite';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export default defineConfig({
-  resolve: {
-    preserveSymlinks: true
-  },
   server: {
+    fs: {
+      allow: [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')]
+    },
     host: '0.0.0.0',
     port: 5173,
     strictPort: true
+  },
+  resolve: {
+    preserveSymlinks: true
   }
 });

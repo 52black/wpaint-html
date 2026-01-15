@@ -6,6 +6,8 @@ export function createHistoryController({
   maxHistory=80,
   captureSnapshot,
   applySnapshot,
+  onUndo,
+  onRedo,
   bindHotkeys=true,
 }){
   const undoStack=[];
@@ -48,6 +50,7 @@ export function createHistoryController({
     redoStack.push(capture());
     const prev=undoStack.pop();
     apply(prev);
+    if(typeof onUndo==='function') onUndo();
     syncUI();
     renderCurrent();
   }
@@ -57,6 +60,7 @@ export function createHistoryController({
     undoStack.push(capture());
     const next=redoStack.pop();
     apply(next);
+    if(typeof onRedo==='function') onRedo();
     syncUI();
     renderCurrent();
   }
