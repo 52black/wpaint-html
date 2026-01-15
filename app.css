@@ -134,7 +134,7 @@ body[data-ui-theme="cute"] .file-menu .tool-btn + .tool-btn::before { background
 .layer-panel .layer-placeholder { width: 100%; border-radius: 12px; border: 2px dashed rgba(0,0,0,.45); box-sizing: border-box; background: rgba(0,0,0,.02); }
 .layer-panel .layer-item .vis { width: 16px; height: 16px; display: grid; place-items: center; border: 1px solid rgba(0,0,0,.12); border-radius: 6px; background: rgba(255,255,255,.95); cursor: pointer; }
 .layer-panel .layer-item .vis.is-off { opacity: .35; }
-.layer-panel .layer-item .vis svg { width: 12px; height: 12px; display: block; }
+.layer-panel .layer-item .vis svg { height: 12px; display: block; }
 .layer-panel .layer-item .thumb-btn { flex: 1; min-width: 0; height: 52px; border-radius: 12px; border: 1px solid rgba(0,0,0,.12); background: rgba(255,255,255,.92); cursor: grab; display: grid; place-items: center; padding: 0; box-sizing: border-box; overflow: hidden; }
 .layer-panel .layer-item .thumb-btn:active { cursor: grabbing; }
 .layer-panel .layer-item .thumb-btn.is-active { background: rgba(17,17,17,.92); border-color: rgba(17,17,17,.92); }

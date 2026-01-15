@@ -1,5 +1,6 @@
 export function createCropController(ctx){
   const {
+    fitCropToViewport,
     containerEl,
     cropBtnEl,
     cropPanelEl,
@@ -46,6 +47,142 @@ export function createCropController(ctx){
   let cropDrag=null;
   let cropDragMoveListener=null;
   let cropDragUpListener=null;
+  let cropHoverMoveListener=null;
+  let cropHoverDownListener=null;
+  let cropHoverUpListener=null;
+  let cropPendingStart=null;
+
+  function setGlobalCursor(cursor){
+    try{
+      if(document && document.documentElement) document.documentElement.style.cursor=cursor||'';
+    }catch{}
+    if(cropOverlayEl) cropOverlayEl.style.cursor=cursor||'default';
+  }
+  function clearGlobalCursor(){
+    setGlobalCursor(cropMode ? 'default' : '');
+  }
+
+  function startCropDragFromEvent(e,hit){
+    if(!cropMode) return;
+    if(!hit) return;
+    cropDraft=normalizeCropDraft(cropDraft);
+    const W=getW()|0;
+    const H=getH()|0;
+    let scaleX=1, scaleY=1;
+    if(cropOverlayContentEl){
+      const rect=cropOverlayContentEl.getBoundingClientRect();
+      if(rect && rect.width>0 && W>0) scaleX=rect.width/W;
+      if(rect && rect.height>0 && H>0) scaleY=rect.height/H;
+    }
+    cropDrag={
+      pointerId:e.pointerId,
+      startX:e.clientX,
+      startY:e.clientY,
+      startDraft:{ ...cropDraft },
+      hit,
+      scaleX,
+      scaleY,
+    };
+    const c=cropCursor(hit);
+    setGlobalCursor(c);
+    try{ cropOverlayEl && cropOverlayEl.setPointerCapture(e.pointerId); }catch{}
+    if(cropDragMoveListener || cropDragUpListener){
+      try{ if(cropDragMoveListener) window.removeEventListener('pointermove',cropDragMoveListener,true); }catch{}
+      try{ if(cropDragUpListener) window.removeEventListener('pointerup',cropDragUpListener,true); }catch{}
+      try{ if(cropDragUpListener) window.removeEventListener('pointercancel',cropDragUpListener,true); }catch{}
+    }
+    const onMove=(ev)=>{
+      if(!cropDrag) return;
+      if(ev.pointerId!==cropDrag.pointerId) return;
+      ev.preventDefault();
+      const sx=(Number(cropDrag.scaleX)||0) > 0 ? cropDrag.scaleX : 1;
+      const sy=(Number(cropDrag.scaleY)||0) > 0 ? cropDrag.scaleY : sx;
+      const dx=Math.round((ev.clientX-cropDrag.startX)/sx);
+      const dy=Math.round((ev.clientY-cropDrag.startY)/sy);
+      const base=cropDrag.startDraft;
+      const next={ ...base };
+      if(cropDrag.hit.left) next.left=base.left+dx;
+      if(cropDrag.hit.right) next.right=base.right-dx;
+      if(cropDrag.hit.top) next.top=base.top+dy;
+      if(cropDrag.hit.bottom) next.bottom=base.bottom-dy;
+      cropDraft=normalizeCropDraft(next);
+      syncCropInputs();
+      syncCropOverlay();
+      if(isCropExtendEnabled() && (cropDraft.left<0 || cropDraft.right<0 || cropDraft.top<0 || cropDraft.bottom<0)){
+        if(fitCropToViewport) fitCropToViewport(cropDraft);
+        else if(fitCanvasToViewport) fitCanvasToViewport();
+      }
+    };
+    const onUp=(ev)=>{
+      if(!cropDrag) return;
+      if(ev.pointerId!==cropDrag.pointerId) return;
+      stopCropDrag(ev);
+    };
+    cropDragMoveListener=onMove;
+    cropDragUpListener=onUp;
+    window.addEventListener('pointermove',onMove,true);
+    window.addEventListener('pointerup',onUp,true);
+    window.addEventListener('pointercancel',onUp,true);
+  }
+
+  function startCropHoverTracking(){
+    if(cropHoverMoveListener) return;
+    const onMove=(e)=>{
+      if(!cropMode || cropDrag) return;
+      if(cropPendingStart && cropPendingStart.pointerId===e.pointerId && (e.buttons&1)){
+        const hit=cropHitTest(e.clientX,e.clientY,e.pointerType);
+        if(hit){
+          e.preventDefault();
+          cropPendingStart=null;
+          startCropDragFromEvent(e,hit);
+          return;
+        }
+      }
+      const hit=cropHitTest(e.clientX,e.clientY,e.pointerType);
+      if(hit){
+        setGlobalCursor(cropCursor(hit));
+      }else{
+        clearGlobalCursor();
+      }
+    };
+    cropHoverMoveListener=onMove;
+    const onDown=(e)=>{
+      if(!cropMode || cropDrag) return;
+      if(e.button!=null && e.button!==0) return;
+      const target=e.target;
+      if(target instanceof HTMLElement){
+        if(target.closest('input,textarea,select')) return;
+      }
+      const hit=cropHitTest(e.clientX,e.clientY,e.pointerType);
+      if(hit){
+        e.preventDefault();
+        startCropDragFromEvent(e,hit);
+        return;
+      }
+      cropPendingStart={ pointerId:e.pointerId };
+    };
+    const onUp=(e)=>{
+      if(cropPendingStart && cropPendingStart.pointerId===e.pointerId) cropPendingStart=null;
+    };
+    cropHoverDownListener=onDown;
+    cropHoverUpListener=onUp;
+    window.addEventListener('pointermove',onMove,true);
+    window.addEventListener('pointerdown',onDown,true);
+    window.addEventListener('pointerup',onUp,true);
+    window.addEventListener('pointercancel',onUp,true);
+  }
+  function stopCropHoverTracking(){
+    if(!cropHoverMoveListener) return;
+    try{ window.removeEventListener('pointermove',cropHoverMoveListener,true); }catch{}
+    try{ if(cropHoverDownListener) window.removeEventListener('pointerdown',cropHoverDownListener,true); }catch{}
+    try{ if(cropHoverUpListener) window.removeEventListener('pointerup',cropHoverUpListener,true); }catch{}
+    try{ if(cropHoverUpListener) window.removeEventListener('pointercancel',cropHoverUpListener,true); }catch{}
+    cropHoverMoveListener=null;
+    cropHoverDownListener=null;
+    cropHoverUpListener=null;
+    cropPendingStart=null;
+    clearGlobalCursor();
+  }
 
   function clampNum(v,lo,hi){
     const n=Number(v)||0;
@@ -148,6 +285,7 @@ export function createCropController(ctx){
     if(closeZoomMenu) closeZoomMenu();
     if(setCanvasPanMode) setCanvasPanMode(false);
     if(fitCanvasToViewport) fitCanvasToViewport();
+    startCropHoverTracking();
     if(cropAllowExtendEl) cropAllowExtendEl.checked=false;
     if(cropPanelEl) cropPanelEl.classList.remove('is-extend');
     updateCropInputMins();
@@ -157,6 +295,8 @@ export function createCropController(ctx){
   }
   function closeCrop(){
     if(!containerEl || !cropMode) return;
+    stopCropDrag();
+    stopCropHoverTracking();
     cropMode=false;
     containerEl.classList.remove('crop-mode');
     if(cropBtnEl) cropBtnEl.classList.remove('is-active');
@@ -248,7 +388,8 @@ export function createCropController(ctx){
     syncCropInputs();
     syncCropOverlay();
     if(isCropExtendEnabled() && (cropDraft.left<0 || cropDraft.right<0 || cropDraft.top<0 || cropDraft.bottom<0)){
-      if(fitCanvasToViewport) fitCanvasToViewport();
+      if(fitCropToViewport) fitCropToViewport(cropDraft);
+      else if(fitCanvasToViewport) fitCanvasToViewport();
     }
   }
 
@@ -349,7 +490,7 @@ export function createCropController(ctx){
     try{ if(cropDragUpListener) window.removeEventListener('pointercancel',cropDragUpListener,true); }catch{}
     cropDragMoveListener=null;
     cropDragUpListener=null;
-    if(cropOverlayEl) cropOverlayEl.style.cursor='default';
+    clearGlobalCursor();
     if(e && cropOverlayEl && e.pointerId!=null){
       try{ cropOverlayEl.releasePointerCapture(e.pointerId); }catch{}
     }
@@ -398,7 +539,9 @@ export function createCropController(ctx){
     cropOverlayEl.addEventListener('pointermove',(e)=>{
       if(!cropMode || cropDrag) return;
       const hit=cropHitTest(e.clientX,e.clientY,e.pointerType);
-      cropOverlayEl.style.cursor=cropCursor(hit);
+      const c=cropCursor(hit);
+      if(hit) setGlobalCursor(c);
+      else clearGlobalCursor();
     },{capture:true});
     cropOverlayEl.addEventListener('pointerdown',(e)=>{
       if(!cropMode) return;
@@ -406,68 +549,13 @@ export function createCropController(ctx){
       const hit=cropHitTest(e.clientX,e.clientY,e.pointerType);
       if(!hit) return;
       e.preventDefault();
-      cropDraft=normalizeCropDraft(cropDraft);
-      const W=getW()|0;
-      const H=getH()|0;
-      let scaleX=1, scaleY=1;
-      if(cropOverlayContentEl){
-        const rect=cropOverlayContentEl.getBoundingClientRect();
-        if(rect && rect.width>0 && W>0) scaleX=rect.width/W;
-        if(rect && rect.height>0 && H>0) scaleY=rect.height/H;
-      }
-      cropDrag={
-        pointerId:e.pointerId,
-        startX:e.clientX,
-        startY:e.clientY,
-        startDraft:{ ...cropDraft },
-        hit,
-        scaleX,
-        scaleY,
-      };
-      cropOverlayEl.style.cursor=cropCursor(hit);
-      try{ cropOverlayEl.setPointerCapture(e.pointerId); }catch{}
-      if(cropDragMoveListener || cropDragUpListener){
-        try{ if(cropDragMoveListener) window.removeEventListener('pointermove',cropDragMoveListener,true); }catch{}
-        try{ if(cropDragUpListener) window.removeEventListener('pointerup',cropDragUpListener,true); }catch{}
-        try{ if(cropDragUpListener) window.removeEventListener('pointercancel',cropDragUpListener,true); }catch{}
-      }
-      const onMove=(ev)=>{
-        if(!cropDrag) return;
-        if(ev.pointerId!==cropDrag.pointerId) return;
-        ev.preventDefault();
-        const sx=(Number(cropDrag.scaleX)||0) > 0 ? cropDrag.scaleX : 1;
-        const sy=(Number(cropDrag.scaleY)||0) > 0 ? cropDrag.scaleY : sx;
-        const dx=Math.round((ev.clientX-cropDrag.startX)/sx);
-        const dy=Math.round((ev.clientY-cropDrag.startY)/sy);
-        const base=cropDrag.startDraft;
-        const next={ ...base };
-        if(cropDrag.hit.left) next.left=base.left+dx;
-        if(cropDrag.hit.right) next.right=base.right-dx;
-        if(cropDrag.hit.top) next.top=base.top+dy;
-        if(cropDrag.hit.bottom) next.bottom=base.bottom-dy;
-        cropDraft=normalizeCropDraft(next);
-        syncCropInputs();
-        syncCropOverlay();
-        if(isCropExtendEnabled() && (cropDraft.left<0 || cropDraft.right<0 || cropDraft.top<0 || cropDraft.bottom<0)){
-          if(fitCanvasToViewport) fitCanvasToViewport();
-        }
-      };
-      const onUp=(ev)=>{
-        if(!cropDrag) return;
-        if(ev.pointerId!==cropDrag.pointerId) return;
-        stopCropDrag(ev);
-      };
-      cropDragMoveListener=onMove;
-      cropDragUpListener=onUp;
-      window.addEventListener('pointermove',onMove,true);
-      window.addEventListener('pointerup',onUp,true);
-      window.addEventListener('pointercancel',onUp,true);
+      startCropDragFromEvent(e,hit);
     },{capture:true});
     cropOverlayEl.addEventListener('pointerup',stopCropDrag,{capture:true});
     cropOverlayEl.addEventListener('pointercancel',stopCropDrag,{capture:true});
     cropOverlayEl.addEventListener('pointerleave',()=>{
       if(!cropMode || cropDrag) return;
-      cropOverlayEl.style.cursor='default';
+      clearGlobalCursor();
     },{capture:true});
   }
 

@@ -2797,6 +2797,31 @@ function fitCanvasToViewport(){
   if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(scale*100)}%`;
   applyCanvasViewTransform();
 }
+function fitCropToViewport(draft){
+  if(!draft) return;
+  const { vw, vh }=getCanvasViewportSize();
+  if(vw<=0 || vh<=0) return;
+  const left=Number(draft.left)||0;
+  const right=Number(draft.right)||0;
+  const top=Number(draft.top)||0;
+  const bottom=Number(draft.bottom)||0;
+  const rectL=left;
+  const rectT=top;
+  const rectR=(W|0)-right;
+  const rectB=(H|0)-bottom;
+  const outW=Math.max(1,rectR-rectL);
+  const outH=Math.max(1,rectB-rectT);
+  const margin=12;
+  const scale=Math.max(0.5,Math.min(3,Math.min((vw-margin*2)/outW,(vh-margin*2)/outH)));
+  const centerX=(rectL+rectR)/2;
+  const centerY=(rectT+rectB)/2;
+  canvasViewScale=scale;
+  canvasViewPanX=Math.round(vw/2-centerX*scale);
+  canvasViewPanY=Math.round(vh/2-centerY*scale);
+  if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(scale*100));
+  if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(scale*100)}%`;
+  applyCanvasViewTransform();
+}
 function setCanvasPanMode(on){
   const wasOn=canvasPanMode;
   canvasPanMode=Boolean(on);
@@ -3430,6 +3455,7 @@ renderCurrent();
 syncLayerUI();
 
 cropController=createCropController({
+  fitCropToViewport,
   containerEl,
   cropBtnEl,
   cropPanelEl,
