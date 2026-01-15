@@ -53,11 +53,17 @@ body { margin: 0; background: #000; display: grid; place-items: center; overflow
 .tool-btn.tool-icon svg { width: 18px; height: 18px; display: block; }
 .tool-btn.has-icon { display: inline-flex; align-items: center; gap: 6px; }
 .file-menu-wrap { position: relative; z-index: 60; }
-.file-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 152px; max-height: 240px; overflow: auto; overscroll-behavior: contain; padding: 6px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 10px 28px rgba(0,0,0,.16); display: none; box-sizing: border-box; z-index: 70; }
+.file-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 152px; max-height: 240px; overflow: auto; overscroll-behavior: contain; padding: 4px 0; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.96); box-shadow: 0 10px 28px rgba(0,0,0,.16); display: none; box-sizing: border-box; z-index: 70; }
 .file-menu.open-up { top: auto; bottom: calc(100% + 6px); }
 .file-menu.is-open { display: block; }
-.file-menu .tool-btn { width: 100%; box-shadow: none; position: static; min-height: 32px; padding: 4px 10px; border-radius: 10px; font-size: 12px; }
-.file-menu .tool-btn + .tool-btn { margin-top: 4px; }
+.file-menu .tool-btn { width: 100%; box-shadow: none; position: static; min-height: 32px; padding: 8px 12px; border: 0; border-radius: 0; background: transparent; text-align: left; font-size: 12px; }
+.file-menu .tool-btn:hover { background: rgba(0,0,0,.06); }
+.file-menu .tool-btn:active { background: rgba(0,0,0,.08); }
+.file-menu .tool-btn + .tool-btn { margin-top: 0; border-top: 1px solid rgba(0,0,0,.10); }
+
+body[data-ui-theme="cute"] .file-menu .tool-btn:hover { background: rgba(255,95,162,.10); }
+body[data-ui-theme="cute"] .file-menu .tool-btn:active { background: rgba(255,95,162,.14); }
+body[data-ui-theme="cute"] .file-menu .tool-btn + .tool-btn { border-top-color: rgba(117,72,148,.16); }
 .tool-pen { top: 8px; right: 8px; }
 .tool-pen2 { top: 38px; right: 8px; }
 .tool-clear { top: 68px; right: 8px; }

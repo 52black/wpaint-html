@@ -2,19 +2,40 @@ import { GIFEncoder } from 'gifenc';
 import { parseGIF, decompressFrames } from 'gifuct-js';
 import { hexToRGB, ensureGifName, downloadBlobAsFile } from './utils.js';
 
+function fillIndex0WithBackground(indicesRaw,backgroundIndex){
+  if(!(indicesRaw instanceof Uint8Array)) return indicesRaw;
+  const bg=backgroundIndex|0;
+  if(bg===0) return indicesRaw;
+  let has0=false;
+  for(let i=0;i<indicesRaw.length;i++){
+    if(indicesRaw[i]===0){ has0=true; break; }
+  }
+  if(!has0) return indicesRaw;
+  const out=new Uint8Array(indicesRaw);
+  for(let i=0;i<out.length;i++){
+    if(out[i]===0) out[i]=bg;
+  }
+  return out;
+}
+
 export function exportGif({ filename, frames, w, h, colorMap, maxColorIndex, transparent, jitterOn, getJitterSubDelayMs }){
   const exportFrames=jitterOn ? [frames[0],frames[1],frames[2]] : [frames[3],frames[3],frames[3]];
 
   const palette=[];
   for(let i=0;i<=maxColorIndex;i++) palette[i]=hexToRGB(colorMap[i] ?? '#000000');
+  const backgroundIndex=(maxColorIndex|0)>=1 ? 1 : 0;
+  if(!transparent && backgroundIndex!==0) palette[0]=palette[backgroundIndex];
 
   const gif=GIFEncoder({ repeat: jitterOn ? 0 : -1 });
   for(let i=0;i<exportFrames.length;i++){
-    const indices=exportFrames[i];
+    const indicesRaw=exportFrames[i];
+    const indices=transparent ? indicesRaw : fillIndex0WithBackground(indicesRaw,backgroundIndex);
     const delay=jitterOn ? getJitterSubDelayMs(i%3) : 0;
     const options={ palette, delay };
-    options.transparent=true;
-    options.transparentIndex=0;
+    if(transparent){
+      options.transparent=true;
+      options.transparentIndex=0;
+    }
     gif.writeFrame(indices,w,h,options);
   }
   gif.finish();

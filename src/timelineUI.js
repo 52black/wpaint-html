@@ -331,8 +331,25 @@ export function createTimelineController(ctx){
   }
 
   function exportAnimGif(){
+    const transparent=Boolean(toggleTransparentEl && toggleTransparentEl.checked);
+    const backgroundIndex=(maxColorIndex|0)>=1 ? 1 : 0;
+    function fillIndex0WithBackground(indicesRaw){
+      if(!(indicesRaw instanceof Uint8Array)) return indicesRaw;
+      if(backgroundIndex===0) return indicesRaw;
+      let has0=false;
+      for(let i=0;i<indicesRaw.length;i++){
+        if(indicesRaw[i]===0){ has0=true; break; }
+      }
+      if(!has0) return indicesRaw;
+      const out=new Uint8Array(indicesRaw);
+      for(let i=0;i<out.length;i++){
+        if(out[i]===0) out[i]=backgroundIndex;
+      }
+      return out;
+    }
     const palette=[];
     for(let i=0;i<=maxColorIndex;i++) palette[i]=hexToRGB(colorMap[i] ?? '#000000');
+    if(!transparent && backgroundIndex!==0) palette[0]=palette[backgroundIndex];
     const gif=GIFEncoder({ repeat: 0 });
     const w=getW()|0;
     const h=getH()|0;
@@ -364,9 +381,12 @@ export function createTimelineController(ctx){
           const dt=Math.min(getJitterSubDelayMs(sub),remaining);
           const indicesRaw=hasLayers ? jitterFrames[sub] : cel.frames[sub];
           const options={ palette, delay: dt };
-          options.transparent=true;
-          options.transparentIndex=0;
-          gif.writeFrame(indicesRaw,w,h,options);
+          const indices=transparent ? indicesRaw : fillIndex0WithBackground(indicesRaw);
+          if(transparent){
+            options.transparent=true;
+            options.transparentIndex=0;
+          }
+          gif.writeFrame(indices,w,h,options);
           remaining-=dt;
         }
       }
