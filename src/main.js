@@ -3145,6 +3145,7 @@ const settingsPageGeneralEl=document.getElementById('settingsPageGeneral');
 const settingsPageAboutEl=document.getElementById('settingsPageAbout');
 const settingsPageShortcutsEl=document.getElementById('settingsPageShortcuts');
 const soundEnabledEl=document.getElementById('soundEnabled');
+const numPadEnabledEl=document.getElementById('numPadEnabled');
 const fullscreenToggleEl=document.getElementById('fullscreenToggle');
 const fullscreenStateEl=document.getElementById('fullscreenState');
 const shortcutsListEl=document.getElementById('shortcutsList');
@@ -3152,6 +3153,7 @@ const shortcutsResetEl=document.getElementById('shortcutsReset');
 const uiThemeDefaultEl=document.getElementById('uiThemeDefault');
 const uiThemeCuteEl=document.getElementById('uiThemeCute');
 const SHORTCUTS_STORAGE_KEY='wpaint.shortcuts.v1';
+const NUMPAD_ENABLED_STORAGE_KEY='wpaint.numPadEnabled.v1';
 function normalizeUiTheme(raw){
   return raw==='cute'?'cute':'';
 }
@@ -3218,6 +3220,207 @@ if(soundEnabledEl){
     if(!soundEnabled) stopStrokeSoundLoop();
   });
 }
+
+function isLikelyTouchDevice(){
+  if(typeof navigator!=='undefined' && Number(navigator.maxTouchPoints||0)>0) return true;
+  if(typeof window!=='undefined' && 'ontouchstart' in window) return true;
+  if(typeof window!=='undefined' && window.matchMedia){
+    try{ if(window.matchMedia('(pointer:coarse)').matches) return true; }catch{}
+    try{ if(window.matchMedia('(any-pointer:coarse)').matches) return true; }catch{}
+  }
+  return false;
+}
+function loadNumPadEnabledPreference(){
+  let saved=null;
+  try{ saved=localStorage.getItem(NUMPAD_ENABLED_STORAGE_KEY); }catch{}
+  if(saved==='1' || saved==='true') return true;
+  if(saved==='0' || saved==='false') return false;
+  return null;
+}
+let numPadEnabled=false;
+{
+  const saved=loadNumPadEnabledPreference();
+  numPadEnabled=saved==null ? isLikelyTouchDevice() : Boolean(saved);
+}
+let numPadActiveInput=null;
+const numPadEl=document.createElement('div');
+numPadEl.className='num-pad';
+numPadEl.hidden=true;
+numPadEl.setAttribute('role','dialog');
+numPadEl.setAttribute('aria-label','数字键盘');
+const numPadGridEl=document.createElement('div');
+numPadGridEl.className='num-pad-grid';
+numPadEl.appendChild(numPadGridEl);
+document.body.appendChild(numPadEl);
+function isNumPadTargetInput(el){
+  return Boolean(el && el.tagName==='INPUT' && el.type==='number');
+}
+function syncNumPadTargetInputs(){
+  const inputs=[...document.querySelectorAll('input[type="number"]')];
+  for(const el of inputs){
+    if(el.dataset.numpadOrigReadonly==null) el.dataset.numpadOrigReadonly=el.readOnly?'1':'0';
+    if(el.dataset.numpadOrigInputmode==null) el.dataset.numpadOrigInputmode=el.getAttribute('inputmode') ?? '';
+    if(numPadEnabled){
+      el.readOnly=true;
+      el.setAttribute('inputmode','none');
+    }else{
+      el.readOnly=el.dataset.numpadOrigReadonly==='1';
+      const orig=el.dataset.numpadOrigInputmode;
+      if(orig) el.setAttribute('inputmode',orig);
+      else el.removeAttribute('inputmode');
+    }
+  }
+}
+function closeNumPad(){
+  numPadEl.hidden=true;
+  numPadActiveInput=null;
+}
+function positionNumPad(){
+  if(numPadEl.hidden || !numPadActiveInput) return;
+  const rect=numPadActiveInput.getBoundingClientRect();
+  const padRect=numPadEl.getBoundingClientRect();
+  const margin=8;
+  let left=rect.left;
+  left=Math.max(margin,Math.min(left,window.innerWidth-padRect.width-margin));
+  let top=rect.bottom+margin;
+  if(top+padRect.height+margin>window.innerHeight) top=Math.max(margin,rect.top-padRect.height-margin);
+  numPadEl.style.left=`${Math.round(left)}px`;
+  numPadEl.style.top=`${Math.round(top)}px`;
+}
+function clampActiveInputToMinMax(){
+  const el=numPadActiveInput;
+  if(!el) return;
+  const raw=String(el.value||'');
+  let n=Math.round(Number(raw));
+  if(!Number.isFinite(n)){
+    el.value='';
+    return;
+  }
+  const minRaw=el.getAttribute('min');
+  const maxRaw=el.getAttribute('max');
+  if(minRaw!=null && minRaw!==''){
+    const min=Number(minRaw);
+    if(Number.isFinite(min)) n=Math.max(n,min);
+  }
+  if(maxRaw!=null && maxRaw!==''){
+    const max=Number(maxRaw);
+    if(Number.isFinite(max)) n=Math.min(n,max);
+  }
+  el.value=String(n);
+}
+function emitActiveInput(type){
+  const el=numPadActiveInput;
+  if(!el) return;
+  el.dispatchEvent(new Event(type,{ bubbles:true }));
+}
+function setActiveInputValue(next){
+  const el=numPadActiveInput;
+  if(!el) return;
+  el.value=String(next);
+  emitActiveInput('input');
+}
+function handleNumPadKey(key){
+  const el=numPadActiveInput;
+  if(!el) return;
+  const k=String(key||'');
+  const cur=String(el.value||'');
+  if(k==='OK'){
+    clampActiveInputToMinMax();
+    emitActiveInput('change');
+    closeNumPad();
+    return;
+  }
+  if(k==='C'){
+    setActiveInputValue('');
+    return;
+  }
+  if(k==='←'){
+    const next=cur.length<=1 ? '' : cur.slice(0,-1);
+    setActiveInputValue(next==='-'?'':next);
+    return;
+  }
+  if(k==='±'){
+    if(cur.startsWith('-')) setActiveInputValue(cur.slice(1));
+    else if(!cur) setActiveInputValue('-0');
+    else setActiveInputValue(`-${cur}`);
+    return;
+  }
+  if(/^\d$/.test(k)){
+    if(cur==='0') setActiveInputValue(k);
+    else if(cur==='-0') setActiveInputValue(`-${k}`);
+    else setActiveInputValue(cur+k);
+  }
+}
+function buildNumPadButton(label,opts){
+  const btn=document.createElement('button');
+  btn.type='button';
+  btn.className='action-btn'+(opts && opts.wide?' is-wide':'');
+  btn.textContent=label;
+  let lastPressTs=0;
+  btn.addEventListener('pointerdown',(e)=>{
+    e.preventDefault();
+    lastPressTs=Date.now();
+    handleNumPadKey(label);
+  });
+  btn.addEventListener('click',(e)=>{
+    e.preventDefault();
+    if(Date.now()-lastPressTs<350) return;
+    handleNumPadKey(label);
+  });
+  return btn;
+}
+{
+  const rows=[
+    ['7','8','9','←'],
+    ['4','5','6','C'],
+    ['1','2','3','±'],
+    ['0','OK'],
+  ];
+  for(const row of rows){
+    for(const key of row){
+      numPadGridEl.appendChild(buildNumPadButton(key,{ wide:key==='OK' || key==='0' && row.length===2 }));
+    }
+  }
+}
+function openNumPadForInput(input){
+  if(!isNumPadTargetInput(input)) return;
+  numPadActiveInput=input;
+  numPadEl.hidden=false;
+  numPadEl.style.visibility='hidden';
+  positionNumPad();
+  numPadEl.style.visibility='';
+  try{ input.focus({ preventScroll:true }); }catch{}
+}
+function setNumPadEnabled(enabled){
+  numPadEnabled=Boolean(enabled);
+  try{
+    localStorage.setItem(NUMPAD_ENABLED_STORAGE_KEY,numPadEnabled?'1':'0');
+  }catch{}
+  if(numPadEnabledEl) numPadEnabledEl.checked=numPadEnabled;
+  syncNumPadTargetInputs();
+  if(!numPadEnabled) closeNumPad();
+}
+if(numPadEnabledEl){
+  numPadEnabledEl.checked=numPadEnabled;
+  numPadEnabledEl.addEventListener('change',()=>{
+    setNumPadEnabled(numPadEnabledEl.checked);
+  });
+}
+syncNumPadTargetInputs();
+window.addEventListener('resize',positionNumPad);
+window.addEventListener('scroll',positionNumPad,true);
+document.addEventListener('pointerdown',(e)=>{
+  const t=e.target;
+  if(!t) return;
+  if(!numPadEl.hidden && (t===numPadEl || numPadEl.contains(t))) return;
+  const input=t.closest ? t.closest('input[type="number"]') : null;
+  if(numPadEnabled && input){
+    e.preventDefault();
+    openNumPadForInput(input);
+    return;
+  }
+  if(!numPadEl.hidden) closeNumPad();
+},{ capture:true });
 
 function normalizeShortcutKey(raw){
   const key=String(raw||'');
