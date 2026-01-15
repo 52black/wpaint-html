@@ -3342,8 +3342,7 @@ function updateFileMenuPlacement(){
   const upAvail=(anchorRect.top-gap)-limitTop;
   const openUp=upAvail>downAvail;
   fileMenuEl.classList.toggle('open-up',openUp);
-  const avail=openUp?upAvail:downAvail;
-  fileMenuEl.style.maxHeight=`${Math.max(120,Math.floor(avail))}px`;
+  fileMenuEl.style.maxHeight='';
 }
 function openFileMenu(){
   fileMenuEl.classList.add('is-open');
