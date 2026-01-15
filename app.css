@@ -127,8 +127,8 @@ body[data-ui-theme="cute"] .file-menu .tool-btn + .tool-btn::before { background
 .layer-panel .row .action-btn { flex: 1; min-width: 0; box-shadow: none; }
 .layer-panel .row .action-btn.icon-only { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; }
 .layer-panel .action-btn svg { width: 16px; height: 16px; display: block; }
-.layer-panel .layer-list { display: grid; gap: 6px; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain; }
-.layer-panel .layer-item { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; cursor: grab; touch-action: none; }
+.layer-panel .layer-list { display: grid; gap: 6px; min-height: 0; max-height: none; overflow: auto; overscroll-behavior: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+.layer-panel .layer-item { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; cursor: grab; touch-action: pan-y; }
 .layer-panel .layer-item:active { cursor: grabbing; }
 .layer-panel .layer-item.is-dragging { opacity: .78; }
 .layer-panel .layer-placeholder { width: 100%; border-radius: 12px; border: 2px dashed rgba(0,0,0,.45); box-sizing: border-box; background: rgba(0,0,0,.02); }

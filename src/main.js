@@ -1758,13 +1758,19 @@ function bindLayerListDrag(){
         const dx=ev.clientX-startX;
         const dy=ev.clientY-startY;
         if(Math.hypot(dx,dy)>=6){
-          started=true;
-          if(timerId) window.clearTimeout(timerId);
-          startDrag(ev,item,fromDisplayIndex);
+          if(e.pointerType==='touch'){
+            cleanup();
+            return;
+          }else{
+            started=true;
+            if(timerId) window.clearTimeout(timerId);
+            startDrag(ev,item,fromDisplayIndex);
+          }
         }
         return;
       }
       if(!layerDrag || layerDrag.pointerId!==pointerId) return;
+      if(e.pointerType==='touch') ev.preventDefault();
       const ghost=layerDrag.ghostEl;
       if(ghost){
         ghost.style.left=`${ev.clientX-layerDrag.offsetX}px`;
