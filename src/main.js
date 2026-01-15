@@ -76,10 +76,59 @@ function bindTouchHintForButtons(){
   }
 }
 bindTouchHintForButtons();
+let bodyScrollLock=null;
+function lockBodyScroll(){
+  if(bodyScrollLock) return;
+  const y=window.scrollY || window.pageYOffset || 0;
+  bodyScrollLock={ y };
+  const body=document.body;
+  if(!body) return;
+  body.style.position='fixed';
+  body.style.top=`${-y}px`;
+  body.style.left='0';
+  body.style.right='0';
+  body.style.width='100%';
+}
+function unlockBodyScroll(){
+  if(!bodyScrollLock) return;
+  const y=bodyScrollLock.y|0;
+  bodyScrollLock=null;
+  const body=document.body;
+  if(!body) return;
+  body.style.position='';
+  body.style.top='';
+  body.style.left='';
+  body.style.right='';
+  body.style.width='';
+  try{ window.scrollTo(0,y); }catch{}
+}
+
+function isSoftKeyboardTarget(el){
+  if(!(el instanceof HTMLElement)) return false;
+  if(el.isContentEditable) return true;
+  const tag=el.tagName;
+  if(tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT') return true;
+  return false;
+}
+
 function applyStageScale(){
+  const ae=document.activeElement;
+  const softKeyboardOpen=isSoftKeyboardTarget(ae);
   const vv=window.visualViewport;
   const vw=(vv && Number.isFinite(vv.width) && vv.width>0) ? vv.width : (document.documentElement && document.documentElement.clientWidth) ? document.documentElement.clientWidth : (window.innerWidth||0);
   const vh=(vv && Number.isFinite(vv.height) && vv.height>0) ? vv.height : (document.documentElement && document.documentElement.clientHeight) ? document.documentElement.clientHeight : (window.innerHeight||0);
+  if(!softKeyboardOpen){
+    applyStageScale.stableViewport={ vw, vh };
+  }else{
+    const stable=applyStageScale.stableViewport;
+    if(stable && Number.isFinite(stable.vw) && Number.isFinite(stable.vh) && stable.vw>0 && stable.vh>0){
+      return applyStageScaleWithViewport(stable.vw,stable.vh);
+    }
+  }
+  return applyStageScaleWithViewport(vw,vh);
+}
+
+function applyStageScaleWithViewport(vw,vh){
   const pad=16;
   const s=Math.min((vw-pad)/512,(vh-pad)/342);
   const scale=clamp((Number.isFinite(s)&&s>0)?s:1,0.2,3);
@@ -105,6 +154,25 @@ if(window.visualViewport){
   window.visualViewport.addEventListener('scroll',applyStageScale);
 }
 window.requestAnimationFrame(applyStageScale);
+
+document.addEventListener('focusin',(e)=>{
+  const target=e.target;
+  if(!isSoftKeyboardTarget(target)) return;
+  if(!(target instanceof HTMLElement) || !target.closest('.jitter-panel')) return;
+  lockBodyScroll();
+  applyStageScale();
+});
+document.addEventListener('focusout',(e)=>{
+  const target=e.target;
+  if(!isSoftKeyboardTarget(target)) return;
+  if(!(target instanceof HTMLElement) || !target.closest('.jitter-panel')) return;
+  window.setTimeout(()=>{
+    const ae=document.activeElement;
+    if(ae instanceof HTMLElement && ae.closest('.jitter-panel') && isSoftKeyboardTarget(ae)) return;
+    unlockBodyScroll();
+    applyStageScale();
+  },0);
+});
 // ===== 画布/数据模型 =====
 // 为了实现“沸腾抖动”的播放效果，这里用 4 帧像素数据来表示同一张画。
 // - 帧 0/1/2：抖动模式下循环播放（会对每段新线条端点做随机偏移）
@@ -2213,7 +2281,8 @@ function bindAdvancedPanelDrag(){
   jitterPanelEl.addEventListener('pointerdown',(e)=>{
     if(e.button!=null && e.button!==0) return;
     if(!container.classList.contains('advanced')) return;
-    if(e.target && e.target.closest && e.target.closest('button,input,select,textarea,a,label')) return;
+    const target=e.target;
+    if(target && target.closest && target.closest('button,input,select,textarea,a')) return;
     ensureAdvancedPanelPlacement();
     const containerRect=container.getBoundingClientRect();
     const panelRect=jitterPanelEl.getBoundingClientRect();
@@ -2229,13 +2298,22 @@ function bindAdvancedPanelDrag(){
       startTop: (panelRect.top-containerRect.top)/scaleY,
       scaleX,
       scaleY,
+      pointerType: e.pointerType || '',
+      isDragging: e.pointerType!=='touch',
     };
     try{ jitterPanelEl.setPointerCapture(e.pointerId); }catch{}
-    e.preventDefault();
+    if(advancedPanelDrag.isDragging) e.preventDefault();
   });
   jitterPanelEl.addEventListener('pointermove',(e)=>{
     if(!advancedPanelDrag) return;
     if(e.pointerId!==advancedPanelDrag.pointerId) return;
+    if(!advancedPanelDrag.isDragging){
+      const dx=e.clientX-advancedPanelDrag.startX;
+      const dy=e.clientY-advancedPanelDrag.startY;
+      const dist=(dx*dx)+(dy*dy);
+      if(dist<(8*8)) return;
+      advancedPanelDrag.isDragging=true;
+    }
     const dx=(e.clientX-advancedPanelDrag.startX)/(advancedPanelDrag.scaleX||1);
     const dy=(e.clientY-advancedPanelDrag.startY)/(advancedPanelDrag.scaleY||1);
     const cw=container.clientWidth|0;
@@ -2261,6 +2339,7 @@ function bindAdvancedPanelDrag(){
     if(!advancedPanelDrag) return;
     if(e && e.pointerId!=null && e.pointerId!==advancedPanelDrag.pointerId) return;
     try{ if(e && e.pointerId!=null) jitterPanelEl.releasePointerCapture(e.pointerId); }catch{}
+    if(e && advancedPanelDrag.isDragging) e.preventDefault();
     advancedPanelDrag=null;
   }
   jitterPanelEl.addEventListener('pointerup',endDrag);

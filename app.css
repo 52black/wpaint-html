@@ -202,6 +202,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; overflow
 .jitter-panel { position: absolute; top: 8px; left: 8px; z-index: 950; display: none; grid-template-rows: auto auto; gap: 6px; padding: 6px 8px; border: 1px solid rgba(0,0,0,.12); border-radius: 12px; background: rgba(255,255,255,.86); font-size: 11px; cursor: grab; }
 .jitter-panel:active { cursor: grabbing; }
 .container.advanced .jitter-panel { display: grid; }
+.jitter-panel, .jitter-panel * { touch-action: none; }
 .jitter-panel .row { display: flex; align-items: center; gap: 6px; }
 .jitter-panel .label { opacity: .8; }
 .jitter-panel input[type="range"] { accent-color: #111; }
