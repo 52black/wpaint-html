@@ -2820,6 +2820,45 @@ sizeEl.addEventListener('input',()=>{
 });
 const fileMenuToggleEl=document.getElementById('fileMenuToggle');
 const fileMenuEl=document.getElementById('fileMenu');
+const themeToggleEl=document.getElementById('themeToggle');
+const UI_THEME_STORAGE_KEY='wpaint.uiTheme.v1';
+function normalizeUiTheme(raw){
+  return raw==='cute'?'cute':'';
+}
+function isCuteUiTheme(){
+  return document.body.getAttribute('data-ui-theme')==='cute';
+}
+function syncUiThemeToggleLabel(){
+  if(!themeToggleEl) return;
+  const label=`主题：${isCuteUiTheme()?'可爱':'默认'}`;
+  themeToggleEl.textContent=label;
+  themeToggleEl.setAttribute('aria-label',label);
+}
+function setUiTheme(theme){
+  const next=normalizeUiTheme(theme);
+  if(next) document.body.setAttribute('data-ui-theme',next);
+  else document.body.removeAttribute('data-ui-theme');
+  syncUiThemeToggleLabel();
+  try{
+    localStorage.setItem(UI_THEME_STORAGE_KEY,next);
+  }catch{}
+}
+function toggleUiTheme(){
+  setUiTheme(isCuteUiTheme()?'':'cute');
+}
+{
+  let saved='';
+  try{
+    saved=normalizeUiTheme(localStorage.getItem(UI_THEME_STORAGE_KEY));
+  }catch{}
+  if(saved) document.body.setAttribute('data-ui-theme',saved);
+  syncUiThemeToggleLabel();
+}
+if(themeToggleEl){
+  themeToggleEl.addEventListener('click',()=>{
+    toggleUiTheme();
+  });
+}
 function updateFileMenuPlacement(){
   if(!fileMenuEl || !fileMenuToggleEl) return;
   const rootRect=(containerEl?containerEl.getBoundingClientRect():null);
@@ -3114,6 +3153,289 @@ async function importGifFromFile(file){
   syncAnimUI();
   return timeline.length|0;
 }
+
+function decodeDeckImageString(x){
+  if(typeof x!=='string') return null;
+  if(x.slice(0,5)!=='%%IMG') return null;
+  const f=x[5]==null?-1:(+x[5]);
+  let data=null;
+  try{
+    data=b64ToU8(x.slice(6));
+  }catch{
+    return null;
+  }
+  if(!data || data.length<4) return null;
+  const w=((data[0]<<8)|data[1])|0;
+  const h=((data[2]<<8)|data[3])|0;
+  if(!(w>0 && h>0)) return null;
+  const pix=new Uint8Array(w*h);
+  if(f===0){
+    const stride=Math.ceil(w/8);
+    let o=0;
+    for(let y=0;y<h;y++){
+      for(let x=0;x<w;x++){
+        const b=data[4+(x>>3)+y*stride];
+        pix[o++]=(b&(1<<(7-(x&7))))?1:0;
+      }
+    }
+  }else if(f===1){
+    const src=data.subarray(4,4+pix.length);
+    pix.set(src);
+  }else if(f===2){
+    let i=4,o=0;
+    while(i+1<data.length && o<pix.length){
+      const p=data[i++]&255;
+      let c=data[i++]&255;
+      while(c>0 && o<pix.length){
+        pix[o++]=p;
+        c--;
+      }
+    }
+  }else{
+    return null;
+  }
+  return { w,h,pix };
+}
+
+function resizeDeckFrame(src,srcW,srcH,dstW,dstH){
+  const out=new Uint8Array(dstW*dstH);
+  const w=Math.min(srcW,dstW)|0;
+  const h=Math.min(srcH,dstH)|0;
+  for(let y=0;y<h;y++){
+    out.set(src.subarray(y*srcW,y*srcW+w),y*dstW);
+  }
+  return out;
+}
+
+function extractJsonObjectAfterKey(text,key,startIndex){
+  const needle=`${key}:`;
+  let i=text.indexOf(needle,startIndex||0);
+  if(i<0) return null;
+  i+=needle.length;
+  while(i<text.length && /\s/.test(text[i])) i++;
+  if(text[i]!=='{') return null;
+  let depth=0,inStr=false,esc=false;
+  let j=i;
+  for(; j<text.length; j++){
+    const ch=text[j];
+    if(inStr){
+      if(esc){ esc=false; continue; }
+      if(ch==='\\'){ esc=true; continue; }
+      if(ch==='"'){ inStr=false; continue; }
+      continue;
+    }
+    if(ch==='"'){ inStr=true; continue; }
+    if(ch==='{'){ depth++; continue; }
+    if(ch==='}'){
+      depth--;
+      if(depth===0){ j++; break; }
+    }
+  }
+  if(depth!==0) return null;
+  return { json:text.slice(i,j), endIndex:j };
+}
+
+function extractJsonObjectAt(text,startIndex){
+  let i=startIndex|0;
+  if(i<0 || i>=text.length) return null;
+  while(i<text.length && /\s/.test(text[i])) i++;
+  if(text[i]!=='{') return null;
+  let depth=0,inStr=false,esc=false;
+  let j=i;
+  for(; j<text.length; j++){
+    const ch=text[j];
+    if(inStr){
+      if(esc){ esc=false; continue; }
+      if(ch==='\\'){ esc=true; continue; }
+      if(ch==='"'){ inStr=false; continue; }
+      continue;
+    }
+    if(ch==='"'){ inStr=true; continue; }
+    if(ch==='{'){ depth++; continue; }
+    if(ch==='}'){
+      depth--;
+      if(depth===0){ j++; break; }
+    }
+  }
+  if(depth!==0) return null;
+  return { json:text.slice(i,j), endIndex:j };
+}
+
+function extractDeckCardSections(deckText){
+  const cards=[];
+  let i=0;
+  while(i<deckText.length){
+    const start=deckText.indexOf('{card:',i);
+    if(start<0) break;
+    const nameStart=start+6;
+    const nameEnd=deckText.indexOf('}',nameStart);
+    if(nameEnd<0) break;
+    const name=deckText.slice(nameStart,nameEnd).trim();
+    const sectionStart=nameEnd+1;
+    let next=deckText.indexOf('{card:',sectionStart);
+    if(next<0) next=deckText.length;
+    cards.push({ name, section: deckText.slice(sectionStart,next) });
+    i=next;
+  }
+  return cards;
+}
+
+function deckerDefaultPalette16(){
+  return [
+    '#ffffff','#ffff00','#ff6500','#dc0000',
+    '#ff0097','#360097','#0000ca','#0097ff',
+    '#00a800','#006500','#653600','#976536',
+    '#b9b9b9','#868686','#454545','#000000',
+  ];
+}
+
+function extractDeckPalette16FromPatterns(deckText){
+  const key='patterns:"%%IMG';
+  const start=deckText.indexOf(key);
+  if(start<0) return null;
+  const valueStart=start+'patterns:"'.length;
+  const end=deckText.indexOf('"',valueStart);
+  if(end<0) return null;
+  const encoded=deckText.slice(valueStart,end);
+  const decoded=decodeDeckImageString(encoded);
+  if(!decoded) return null;
+  if(decoded.w!==8) return null;
+  const PAT_ROWS=28*8;
+  const PAT_BYTES=decoded.w*PAT_ROWS;
+  if(decoded.h<=PAT_ROWS) return deckerDefaultPalette16();
+  const need=PAT_BYTES+(BASE_COLOR_COUNT*3);
+  if(decoded.pix.length<need) return null;
+  const colors=[];
+  let o=PAT_BYTES;
+  for(let i=0;i<BASE_COLOR_COUNT;i++,o+=3){
+    const r=decoded.pix[o]&255;
+    const g=decoded.pix[o+1]&255;
+    const b=decoded.pix[o+2]&255;
+    colors.push(`#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`);
+  }
+  return colors;
+}
+
+function extractTargetFrameStringsFromWidget(targetWidget){
+  const arg=targetWidget && targetWidget.widgets && targetWidget.widgets.fr && targetWidget.widgets.fr.value && targetWidget.widgets.fr.value.arg;
+  if(Array.isArray(arg)){
+    const imgs=arg.filter(s=>typeof s==='string' && s.slice(0,5)==='%%IMG');
+    if(imgs.length>=3) return imgs.slice(0,3);
+  }
+  const imgs=[];
+  const walk=(v)=>{
+    if(imgs.length>=3) return;
+    if(typeof v==='string'){
+      if(v.slice(0,5)==='%%IMG') imgs.push(v);
+      return;
+    }
+    if(Array.isArray(v)){
+      for(const x of v){ walk(x); if(imgs.length>=3) return; }
+      return;
+    }
+    if(v && typeof v==='object'){
+      for(const k of Object.keys(v)){ walk(v[k]); if(imgs.length>=3) return; }
+    }
+  };
+  walk(targetWidget);
+  return imgs.length>=3?imgs.slice(0,3):null;
+}
+
+function remapDeckPatternIndex(v){
+  const p=v&255;
+  if(p===0) return 0;
+  if(p===1) return OUTLINE_FIRST;
+  if(p>=32 && p<(32+BASE_COLOR_COUNT)){
+    const mapped=(p-31);
+    if(mapped===2) return 16;
+    if(mapped===16) return 2;
+    return mapped;
+  }
+  return 0;
+}
+
+function remapDeckFrameInPlace(frame){
+  for(let i=0;i<frame.length;i++) frame[i]=remapDeckPatternIndex(frame[i]);
+  return frame;
+}
+
+async function importDeckFromFile(file){
+  const deckText=await file.text();
+  const deckPalette=extractDeckPalette16FromPatterns(deckText);
+  if(deckPalette){
+    const swappedPalette=deckPalette.slice();
+    const tmp=swappedPalette[1];
+    swappedPalette[1]=swappedPalette[15];
+    swappedPalette[15]=tmp;
+    activeSchemeId='';
+    setPalette16(swappedPalette);
+    syncOutlineColorMap();
+    applyBackground();
+    syncPaletteButtonsColors();
+    schemeBaseline=captureBaseline();
+    syncSchemeListActive();
+    renderCurrent();
+  }
+  const cards=extractDeckCardSections(deckText).filter(c=>c.name!=='title');
+  if(cards.length===0) return 0;
+  const parsed=[];
+  for(const c of cards){
+    const widgetsIx=c.section.indexOf('{widgets}');
+    const searchStart=widgetsIx>=0?(widgetsIx+'{widgets}'.length):0;
+    const found=extractJsonObjectAfterKey(c.section,'target',searchStart);
+    if(!found){
+      parsed.push({ name:c.name, frames:null });
+      continue;
+    }
+    let widget=null;
+    try{ widget=JSON.parse(found.json); }catch{ widget=null; }
+    const frameStrings=widget?extractTargetFrameStringsFromWidget(widget):null;
+    parsed.push({ name:c.name, frames:frameStrings });
+  }
+  let base=null;
+  for(const p of parsed){
+    if(!p.frames) continue;
+    const decoded=decodeDeckImageString(p.frames[0]);
+    if(decoded){ base=decoded; break; }
+  }
+  if(!base) return 0;
+  if(stopTimelinePlayback) stopTimelinePlayback();
+  timelinePlaying=false;
+  bumpTimelineToken();
+  setCanvasSize(base.w,base.h);
+  const nextTimeline=[];
+  for(const p of parsed){
+    const blank=new Uint8Array(base.w*base.h);
+    if(!p.frames){
+      nextTimeline.push({ frames:[new Uint8Array(blank),new Uint8Array(blank),new Uint8Array(blank),new Uint8Array(blank)], delay:360 });
+      continue;
+    }
+    const d0=decodeDeckImageString(p.frames[0]);
+    const d1=decodeDeckImageString(p.frames[1]);
+    const d2=decodeDeckImageString(p.frames[2]);
+    const f0=remapDeckFrameInPlace(d0?((d0.w===base.w && d0.h===base.h)?new Uint8Array(d0.pix):resizeDeckFrame(d0.pix,d0.w,d0.h,base.w,base.h)):new Uint8Array(blank));
+    const f1=remapDeckFrameInPlace(d1?((d1.w===base.w && d1.h===base.h)?new Uint8Array(d1.pix):resizeDeckFrame(d1.pix,d1.w,d1.h,base.w,base.h)):new Uint8Array(f0));
+    const f2=remapDeckFrameInPlace(d2?((d2.w===base.w && d2.h===base.h)?new Uint8Array(d2.pix):resizeDeckFrame(d2.pix,d2.w,d2.h,base.w,base.h)):new Uint8Array(f0));
+    nextTimeline.push({ frames:[f0,f1,f2,new Uint8Array(f0)], delay:360 });
+  }
+  if(nextTimeline.length){
+    timeline=nextTimeline;
+  }else{
+    const baseFrame=remapDeckFrameInPlace(new Uint8Array(base.pix));
+    timeline=[{ frames:[new Uint8Array(baseFrame),new Uint8Array(baseFrame),new Uint8Array(baseFrame),new Uint8Array(baseFrame)], delay:360 }];
+  }
+  timelineIndex=0;
+  timelineSelected=new Set([0]);
+  timelineAnchor=0;
+  applyTimelineFrame(0);
+  resetHistory();
+  closeCrop();
+  fitCanvasToViewport();
+  applyPlaybackMode();
+  renderCurrent();
+  syncAnimUI();
+  return timeline.length|0;
+}
 importGifBtn.addEventListener('click',()=>{
   gifFileEl.value='';
   gifFileEl.click();
@@ -3149,8 +3471,26 @@ if(wpaintFileEl){
     const file=wpaintFileEl.files && wpaintFileEl.files[0];
     if(!file) return;
     try{
-      await loadWpaintProjectFromFile(file);
+      stopAnim();
+      const name=String(file.name||'').toLowerCase();
+      if(name.endsWith('.deck')){
+        const count=await importDeckFromFile(file);
+        if(count>1){
+          displayFrame=3;
+          renderCurrent();
+          return;
+        }
+      }else{
+        await loadWpaintProjectFromFile(file);
+      }
     }catch{}
+    if(jitterOnEl.checked){
+      displayFrame=0;
+      startAnim();
+    }else{
+      displayFrame=3;
+    }
+    renderCurrent();
   });
 }
 importBgBtn.addEventListener('click',()=>{
