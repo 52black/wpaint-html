@@ -293,10 +293,11 @@ export function createCropController(ctx){
     const bottom=(H-1-maxY)|0;
     return normalizeCropDraft({ left, right, top, bottom });
   }
-  function cropHitTest(clientX,clientY){
+  function cropHitTest(clientX,clientY,pointerType){
     if(!cropMode || !cropRectEl) return null;
     const r=cropRectEl.getBoundingClientRect();
-    const hitPad=10;
+    const p=String(pointerType||'');
+    const hitPad=(p==='touch') ? 26 : (p==='pen' ? 14 : 10);
     const withinX=(clientX>=r.left-hitPad && clientX<=r.right+hitPad);
     const withinY=(clientY>=r.top-hitPad && clientY<=r.bottom+hitPad);
     if(!withinX || !withinY) return null;
@@ -396,22 +397,32 @@ export function createCropController(ctx){
   if(cropOverlayEl){
     cropOverlayEl.addEventListener('pointermove',(e)=>{
       if(!cropMode || cropDrag) return;
-      const hit=cropHitTest(e.clientX,e.clientY);
+      const hit=cropHitTest(e.clientX,e.clientY,e.pointerType);
       cropOverlayEl.style.cursor=cropCursor(hit);
     },{capture:true});
     cropOverlayEl.addEventListener('pointerdown',(e)=>{
       if(!cropMode) return;
       if(e.button!=null && e.button!==0) return;
-      const hit=cropHitTest(e.clientX,e.clientY);
+      const hit=cropHitTest(e.clientX,e.clientY,e.pointerType);
       if(!hit) return;
       e.preventDefault();
       cropDraft=normalizeCropDraft(cropDraft);
+      const W=getW()|0;
+      const H=getH()|0;
+      let scaleX=1, scaleY=1;
+      if(cropOverlayContentEl){
+        const rect=cropOverlayContentEl.getBoundingClientRect();
+        if(rect && rect.width>0 && W>0) scaleX=rect.width/W;
+        if(rect && rect.height>0 && H>0) scaleY=rect.height/H;
+      }
       cropDrag={
         pointerId:e.pointerId,
         startX:e.clientX,
         startY:e.clientY,
         startDraft:{ ...cropDraft },
         hit,
+        scaleX,
+        scaleY,
       };
       cropOverlayEl.style.cursor=cropCursor(hit);
       try{ cropOverlayEl.setPointerCapture(e.pointerId); }catch{}
@@ -424,9 +435,10 @@ export function createCropController(ctx){
         if(!cropDrag) return;
         if(ev.pointerId!==cropDrag.pointerId) return;
         ev.preventDefault();
-        const s=(Number(getCanvasViewScale?getCanvasViewScale():1)||1)||1;
-        const dx=Math.round((ev.clientX-cropDrag.startX)/s);
-        const dy=Math.round((ev.clientY-cropDrag.startY)/s);
+        const sx=(Number(cropDrag.scaleX)||0) > 0 ? cropDrag.scaleX : 1;
+        const sy=(Number(cropDrag.scaleY)||0) > 0 ? cropDrag.scaleY : sx;
+        const dx=Math.round((ev.clientX-cropDrag.startX)/sx);
+        const dy=Math.round((ev.clientY-cropDrag.startY)/sy);
         const base=cropDrag.startDraft;
         const next={ ...base };
         if(cropDrag.hit.left) next.left=base.left+dx;

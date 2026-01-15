@@ -158,6 +158,7 @@ body { margin: 0; background: #000; display: grid; place-items: center; overflow
 .crop-overlay { position: absolute; inset: 0; z-index: 6; display: none; pointer-events: none; }
 .container.crop-mode .crop-overlay { display: block; pointer-events: auto; }
 .crop-overlay-content { position: absolute; top: 0; left: 0; transform-origin: top left; }
+.crop-overlay, .crop-overlay * { touch-action: none; }
 .crop-shade { position: absolute; background: rgba(0,0,0,.22); display: none; }
 .container.crop-mode .crop-shade { display: block; }
 .crop-rect { position: absolute; border: 2px solid rgba(17,17,17,.88); box-sizing: border-box; background: transparent; border-radius: 6px; }
