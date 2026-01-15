@@ -307,7 +307,13 @@
       <button id="resizeClose" type="button" class="action-btn">关闭</button>
     </div>
     <div class="modal-body">
-      <div class="modal-form-grid">
+      <div id="clearAllLayersWrap" class="modal-field" style="display:none;">
+        <label class="toggle" style="justify-content:space-between;width:100%;">
+          <span>清空所有图层</span>
+          <input id="clearAllLayers" type="checkbox" checked>
+        </label>
+      </div>
+      <div id="resizeGrid" class="modal-form-grid">
         <label class="modal-field">
           <span>宽</span>
           <input id="resizeW" class="modal-input" type="number" min="1" max="1000" step="1">

@@ -232,6 +232,7 @@ export function createTimelineController(ctx){
   }
 
   function syncAnimUI(){
+    if(!animModalEl || !animModalEl.classList.contains('is-open')) return;
     rebuildAnimFrameList();
     const timeline=getTimeline();
     const selected=[...getTimelineSelected()].filter(i=>i>=0 && i<timeline.length);

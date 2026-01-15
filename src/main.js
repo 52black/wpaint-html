@@ -88,10 +88,17 @@ function playSound(name){
 }
 function setSoundsFromDeckText(deckText){
   const text=String(deckText||'');
+  const tag='{sounds}';
+  const start=text.indexOf(tag);
+  if(start<0) return false;
+  const sectionStart=start+tag.length;
+  let sectionEnd=text.indexOf('\n{',sectionStart);
+  if(sectionEnd<0) sectionEnd=text.length;
+  const section=text.slice(sectionStart,sectionEnd);
   const re=/([A-Za-z0-9_]+)\s*:\s*\"(%%SND0[^\"]+)\"/g;
   let changed=false;
   for(;;){
-    const m=re.exec(text);
+    const m=re.exec(section);
     if(!m) break;
     const k=m[1];
     const v=m[2];
@@ -332,6 +339,9 @@ const resizeCancelEl=document.getElementById('resizeCancel');
 const resizeApplyEl=document.getElementById('resizeApply');
 const resizeWEl=document.getElementById('resizeW');
 const resizeHEl=document.getElementById('resizeH');
+const clearAllLayersWrapEl=document.getElementById('clearAllLayersWrap');
+const clearAllLayersEl=document.getElementById('clearAllLayers');
+const resizeGridEl=document.getElementById('resizeGrid');
 const undoBtn=document.getElementById('undo');
 const redoBtn=document.getElementById('redo');
 const exportGifBtn=document.getElementById('exportGif');
@@ -2298,13 +2308,32 @@ stippleTinyBtn.addEventListener('click',()=>{ setToolWithSound('stippleTiny'); }
 softLrgBtn.addEventListener('click',()=>{ setToolWithSound('softLrg'); });
 eraserBtn.addEventListener('click',()=>{ setToolWithSound('eraser'); });
 
+function getClearAllLayersMode(){
+  if(!clearAllLayersWrapEl || !clearAllLayersEl) return true;
+  if(clearAllLayersWrapEl.style.display==='none') return true;
+  return Boolean(clearAllLayersEl.checked);
+}
+function syncResizeModalUI(){
+  const allLayers=getClearAllLayersMode();
+  if(resizeGridEl) resizeGridEl.style.display=allLayers ? '' : 'none';
+  if(resizeApplyEl) resizeApplyEl.textContent=allLayers ? '清空并应用' : '清空当前画布';
+}
 function clearCanvas(){
   if(!resizeModalEl) return;
   playSound('snap') || playSound('click');
   if(resizeWEl) resizeWEl.value=String(Math.min(1000,W|0));
   if(resizeHEl) resizeHEl.value=String(Math.min(750,H|0));
+  const cel=getCurrentCel();
+  ensureCelModel(cel);
+  const hasMultipleLayers=Boolean(cel && Array.isArray(cel.layers) && cel.layers.length>1);
+  if(clearAllLayersWrapEl) clearAllLayersWrapEl.style.display=hasMultipleLayers ? '' : 'none';
+  if(hasMultipleLayers && clearAllLayersEl) clearAllLayersEl.checked=true;
+  syncResizeModalUI();
   openModal(resizeModalEl);
-  try{ if(resizeWEl) resizeWEl.focus(); }catch{}
+  try{
+    if(getClearAllLayersMode() && resizeWEl) resizeWEl.focus();
+    else if(resizeApplyEl) resizeApplyEl.focus();
+  }catch{}
 }
 function closeResizeModal(){
   if(!resizeModalEl) return;
@@ -2360,10 +2389,30 @@ function clearAndResizeProject(newW,newH){
   renderCurrent();
   syncAnimUI();
 }
+function clearActiveLayer(){
+  const cel=getCurrentCel();
+  if(!cel) return;
+  ensureCelModel(cel);
+  clampActiveLayerIndex(cel);
+  const layer=cel.layers && cel.layers[activeLayerIndex|0];
+  if(!layer || !Array.isArray(layer.frames)) return;
+  pushHistory();
+  for(let fi=0;fi<4;fi++){
+    const f=layer.frames[fi];
+    if(f && typeof f.fill==='function') f.fill(0);
+  }
+  markCompositeDirty();
+  renderCurrent();
+}
 function applyResizeModal(){
+  playSound('scratch') || playSound('click');
+  if(!getClearAllLayersMode()){
+    clearActiveLayer();
+    closeResizeModal();
+    return;
+  }
   const w=parseResizeValue(resizeWEl ? resizeWEl.value : null,W,1000);
   const h=parseResizeValue(resizeHEl ? resizeHEl.value : null,H,750);
-  playSound('scratch') || playSound('click');
   clearAndResizeProject(w,h);
   closeResizeModal();
 }
@@ -2371,6 +2420,7 @@ if(clearBtn) clearBtn.addEventListener('click',clearCanvas);
 if(resizeApplyEl) resizeApplyEl.addEventListener('click',applyResizeModal);
 if(resizeCancelEl) resizeCancelEl.addEventListener('click',closeResizeModal);
 if(resizeCloseEl) resizeCloseEl.addEventListener('click',closeResizeModal);
+if(clearAllLayersEl) clearAllLayersEl.addEventListener('change',syncResizeModalUI);
 if(resizeModalEl){
   makeModalDraggable(resizeModalEl);
   resizeModalEl.addEventListener('mousedown',(e)=>{
@@ -3820,7 +3870,31 @@ const timelineController=createTimelineController({
   ensureCelModel,
   applyWorkingFramesFromCel,
 });
-function applyTimelineFrame(i){ return timelineController.applyTimelineFrame(i); }
+function applyTimelineFrame(i){
+  const idx=i|0;
+  const cel=Array.isArray(timeline) ? (timeline[idx] || null) : null;
+  const fs=cel && cel.deckFrames;
+  if(fs){
+    const w=W|0;
+    const h=H|0;
+    const blank=new Uint8Array(Math.max(1,w*h));
+    const d0=decodeDeckImageString(fs[0]);
+    const d1=decodeDeckImageString(fs[1]);
+    const d2=decodeDeckImageString(fs[2]);
+    const f0=remapDeckFrameInPlace(d0?((d0.w===w && d0.h===h)?new Uint8Array(d0.pix):resizeDeckFrame(d0.pix,d0.w,d0.h,w,h)):new Uint8Array(blank));
+    const f1=remapDeckFrameInPlace(d1?((d1.w===w && d1.h===h)?new Uint8Array(d1.pix):resizeDeckFrame(d1.pix,d1.w,d1.h,w,h)):new Uint8Array(f0));
+    const f2=remapDeckFrameInPlace(d2?((d2.w===w && d2.h===h)?new Uint8Array(d2.pix):resizeDeckFrame(d2.pix,d2.w,d2.h,w,h)):new Uint8Array(f0));
+    cel.frames=[f0,f1,f2,new Uint8Array(f0)];
+    if(Array.isArray(cel.layers) && cel.layers.length>0){
+      const layer0=cel.layers[0];
+      if(layer0 && Array.isArray(layer0.frames) && layer0.frames.length===4){
+        layer0.frames=cel.frames;
+      }
+    }
+    delete cel.deckFrames;
+  }
+  return timelineController.applyTimelineFrame(idx);
+}
 function setTimelineIndex(i){ return timelineController.setTimelineIndexAndRender(i); }
 function syncAnimUI(){ return timelineController.syncAnimUI(); }
 function stopTimelinePlayback(){ return timelineController.stopTimelinePlayback(); }
@@ -3953,6 +4027,7 @@ function applyBackground(){
     previewBg.style.backgroundImage='none';
     previewBg.style.backgroundColor=bg1;
   }
+  if(clearBgBtn) clearBgBtn.disabled=!customBgUrl;
 }
 toggleTransparent.addEventListener('change',()=>{
   applyBackground();
@@ -4221,6 +4296,28 @@ function remapDeckFrameInPlace(frame){
   return frame;
 }
 
+function extractDeckFrameStringsFromTargetJsonText(jsonText){
+  const text=String(jsonText||'');
+  const out=[];
+  let i=0;
+  while(out.length<3){
+    const start=text.indexOf('"%%IMG',i);
+    if(start<0) break;
+    const valueStart=start+1;
+    let end=valueStart;
+    for(; end<text.length; end++){
+      if(text[end]!=='"') continue;
+      let backslashes=0;
+      for(let k=end-1;k>=valueStart && text[k]==='\\';k--) backslashes++;
+      if((backslashes&1)===0) break;
+    }
+    if(end>=text.length) break;
+    out.push(text.slice(valueStart,end));
+    i=end+1;
+  }
+  return out.length>=3 ? out : null;
+}
+
 async function importDeckFromFile(file){
   const deckText=await file.text();
   setSoundsFromDeckText(deckText);
@@ -4250,53 +4347,81 @@ async function importDeckFromFile(file){
       parsed.push({ name:c.name, frames:null });
       continue;
     }
-    let widget=null;
-    try{ widget=JSON.parse(found.json); }catch{ widget=null; }
-    const frameStrings=widget?extractTargetFrameStringsFromWidget(widget):null;
+    const frameStrings=extractDeckFrameStringsFromTargetJsonText(found.json);
     parsed.push({ name:c.name, frames:frameStrings });
   }
   let base=null;
-  for(const p of parsed){
+  let baseIndex=-1;
+  for(let i=0;i<parsed.length;i++){
+    const p=parsed[i];
     if(!p.frames) continue;
     const decoded=decodeDeckImageString(p.frames[0]);
-    if(decoded){ base=decoded; break; }
+    if(decoded){ base=decoded; baseIndex=i; break; }
   }
   if(!base) return 0;
   if(stopTimelinePlayback) stopTimelinePlayback();
   timelinePlaying=false;
   bumpTimelineToken();
+  const token=timelineToken;
   setCanvasSize(base.w,base.h);
-  const nextTimeline=[];
-  for(const p of parsed){
-    const blank=new Uint8Array(base.w*base.h);
-    if(!p.frames){
-      nextTimeline.push({ frames:[new Uint8Array(blank),new Uint8Array(blank),new Uint8Array(blank),new Uint8Array(blank)], delay:360 });
-      continue;
-    }
-    const d0=decodeDeckImageString(p.frames[0]);
-    const d1=decodeDeckImageString(p.frames[1]);
-    const d2=decodeDeckImageString(p.frames[2]);
+  const blank=new Uint8Array(base.w*base.h);
+  const nextTimeline=new Array(parsed.length);
+  for(let i=0;i<parsed.length;i++){
+    const frames4=[new Uint8Array(blank),new Uint8Array(blank),new Uint8Array(blank),new Uint8Array(blank)];
+    const cel={ frames: frames4, delay: 360 };
+    if(parsed[i].frames) cel.deckFrames=parsed[i].frames;
+    nextTimeline[i]=cel;
+  }
+  timeline=nextTimeline.length ? nextTimeline : [{ frames:[new Uint8Array(blank),new Uint8Array(blank),new Uint8Array(blank),new Uint8Array(blank)], delay:360 }];
+  timelineIndex=Math.max(0,Math.min(timeline.length-1,baseIndex>=0?baseIndex:0));
+  timelineSelected=new Set([timelineIndex]);
+  timelineAnchor=timelineIndex;
+  const initCel=timeline[timelineIndex];
+  if(initCel && initCel.deckFrames){
+    const d0=decodeDeckImageString(initCel.deckFrames[0]);
+    const d1=decodeDeckImageString(initCel.deckFrames[1]);
+    const d2=decodeDeckImageString(initCel.deckFrames[2]);
     const f0=remapDeckFrameInPlace(d0?((d0.w===base.w && d0.h===base.h)?new Uint8Array(d0.pix):resizeDeckFrame(d0.pix,d0.w,d0.h,base.w,base.h)):new Uint8Array(blank));
     const f1=remapDeckFrameInPlace(d1?((d1.w===base.w && d1.h===base.h)?new Uint8Array(d1.pix):resizeDeckFrame(d1.pix,d1.w,d1.h,base.w,base.h)):new Uint8Array(f0));
     const f2=remapDeckFrameInPlace(d2?((d2.w===base.w && d2.h===base.h)?new Uint8Array(d2.pix):resizeDeckFrame(d2.pix,d2.w,d2.h,base.w,base.h)):new Uint8Array(f0));
-    nextTimeline.push({ frames:[f0,f1,f2,new Uint8Array(f0)], delay:360 });
+    initCel.frames=[f0,f1,f2,new Uint8Array(f0)];
+    delete initCel.deckFrames;
   }
-  if(nextTimeline.length){
-    timeline=nextTimeline;
-  }else{
-    const baseFrame=remapDeckFrameInPlace(new Uint8Array(base.pix));
-    timeline=[{ frames:[new Uint8Array(baseFrame),new Uint8Array(baseFrame),new Uint8Array(baseFrame),new Uint8Array(baseFrame)], delay:360 }];
-  }
-  timelineIndex=0;
-  timelineSelected=new Set([0]);
-  timelineAnchor=0;
-  applyTimelineFrame(0);
+  applyTimelineFrame(timelineIndex);
   resetHistory();
   closeCrop();
   fitCanvasToViewport();
   applyPlaybackMode();
   renderCurrent();
   syncAnimUI();
+  window.setTimeout(async ()=>{
+    for(let i=0;i<timeline.length;i++){
+      if(token!==timelineToken) return;
+      const cel=timeline[i];
+      const fs=cel && cel.deckFrames;
+      if(!fs) continue;
+      const d0=decodeDeckImageString(fs[0]);
+      const d1=decodeDeckImageString(fs[1]);
+      const d2=decodeDeckImageString(fs[2]);
+      const f0=remapDeckFrameInPlace(d0?((d0.w===base.w && d0.h===base.h)?new Uint8Array(d0.pix):resizeDeckFrame(d0.pix,d0.w,d0.h,base.w,base.h)):new Uint8Array(blank));
+      const f1=remapDeckFrameInPlace(d1?((d1.w===base.w && d1.h===base.h)?new Uint8Array(d1.pix):resizeDeckFrame(d1.pix,d1.w,d1.h,base.w,base.h)):new Uint8Array(f0));
+      const f2=remapDeckFrameInPlace(d2?((d2.w===base.w && d2.h===base.h)?new Uint8Array(d2.pix):resizeDeckFrame(d2.pix,d2.w,d2.h,base.w,base.h)):new Uint8Array(f0));
+      cel.frames=[f0,f1,f2,new Uint8Array(f0)];
+      if(Array.isArray(cel.layers) && cel.layers.length>0){
+        const layer0=cel.layers[0];
+        if(layer0 && Array.isArray(layer0.frames) && layer0.frames.length===4){
+          layer0.frames=cel.frames;
+        }
+      }
+      delete cel.deckFrames;
+      if(i===timelineIndex){
+        applyTimelineFrame(i);
+        renderCurrent();
+      }
+      if((i&7)===0) await new Promise(r=>window.setTimeout(r,0));
+    }
+    if(token===timelineToken) syncAnimUI();
+  },0);
   return timeline.length|0;
 }
 importGifBtn.addEventListener('click',()=>{
