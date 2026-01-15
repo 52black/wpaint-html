@@ -38,7 +38,7 @@
         <button id="importGif" class="tool-btn tool-importgif" role="menuitem">导入GIF</button>
         <button id="importBg" class="tool-btn tool-importbg" role="menuitem">导入背景</button>
         <button id="clearBg" class="tool-btn" role="menuitem">清除背景</button>
-        <button id="themeToggle" class="tool-btn" role="menuitem">主题：默认</button>
+        <button id="settingsOpen" class="tool-btn" role="menuitem">设置</button>
       </div>
     </div>
   </div>
@@ -71,7 +71,7 @@
   <button id="paletteCollapse" type="button" class="action-btn palette-collapse-btn" style="display:none;">收起</button>
 </div>
 <div class="sidebar-footer" aria-label="底部按钮">
-  <button id="aboutBtn" type="button" class="action-btn" title="关于" aria-label="关于"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button>
+  <button id="settingsFooterBtn" type="button" class="action-btn" title="设置" aria-label="设置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
   <button id="animBtn" type="button" class="action-btn" title="动画" aria-label="动画"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l12 6-12 6Z"/><path d="M3 6v12"/></svg></button>
   <button id="layerBtn" type="button" class="action-btn" title="图层" aria-label="图层"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7l9 5 9-5-9-5Z"/><path d="M3 12l9 5 9-5"/><path d="M3 17l9 5 9-5"/></svg></button>
   <button id="cropBtn" type="button" class="action-btn" title="裁剪" aria-label="裁剪"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg></button>
@@ -325,16 +325,67 @@
     </div>
   </div>
 </div>
-<div id="aboutModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="关于">
+<div id="settingsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="设置">
   <div class="modal-card">
     <div class="modal-head">
-      <strong>关于</strong>
-      <button id="aboutClose" type="button" class="action-btn">关闭</button>
+      <strong>设置</strong>
+      <button id="settingsClose" type="button" class="action-btn">关闭</button>
     </div>
     <div class="modal-body">
-      <div>名称：WPaint</div>
-      <div>作者：雪风与梦 (网名)</div>
-      <div>参考 wigglypaint（作者:Internet Janitor，John Earnest）</div>
+      <div class="settings-tabs" role="tablist" aria-label="设置分页">
+        <button id="settingsTabGeneral" type="button" class="action-btn is-active" role="tab" aria-selected="true" aria-controls="settingsPageGeneral">设置</button>
+        <button id="settingsTabAbout" type="button" class="action-btn" role="tab" aria-selected="false" aria-controls="settingsPageAbout">关于</button>
+        <button id="settingsTabShortcuts" type="button" class="action-btn desktop-only" role="tab" aria-selected="false" aria-controls="settingsPageShortcuts">快捷键</button>
+      </div>
+      <div id="settingsPageGeneral" class="settings-page" role="tabpanel" aria-labelledby="settingsTabGeneral">
+        <div class="modal-field">
+          <span>UI主题</span>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <label class="toggle" style="justify-content:space-between;">
+              <span>默认</span>
+              <input id="uiThemeDefault" name="uiTheme" type="radio" value="default">
+            </label>
+            <label class="toggle" style="justify-content:space-between;">
+              <span>可爱</span>
+              <input id="uiThemeCute" name="uiTheme" type="radio" value="cute">
+            </label>
+          </div>
+        </div>
+        <div class="modal-field">
+          <span>全屏</span>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <button id="fullscreenToggle" type="button" class="action-btn">进入全屏</button>
+            <span id="fullscreenState" style="font-size:12px;opacity:.75;"></span>
+          </div>
+        </div>
+      </div>
+      <div id="settingsPageAbout" class="settings-page" role="tabpanel" aria-labelledby="settingsTabAbout" hidden>
+        <div class="modal-field">
+          <span>关于</span>
+          <div style="display:grid;gap:4px;">
+            <div>名称：WPaint</div>
+            <div>作者：雪风与梦 (网名)</div>
+            <div>参考 wigglypaint（作者:Internet Janitor，John Earnest）</div>
+          </div>
+        </div>
+      </div>
+      <div id="settingsPageShortcuts" class="settings-page desktop-only" role="tabpanel" aria-labelledby="settingsTabShortcuts" hidden>
+        <div class="modal-field">
+          <span>说明</span>
+          <div style="display:grid;gap:4px;">
+            <div>点击某个快捷键后，按下新的组合键即可替换</div>
+          </div>
+        </div>
+        <div class="modal-field">
+          <span>快捷键</span>
+          <div style="display:grid;gap:8px;">
+            <div id="shortcutsList" class="settings-shortcuts"></div>
+            <div style="display:flex;justify-content:flex-end;">
+              <button id="shortcutsReset" type="button" class="action-btn">恢复默认</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>

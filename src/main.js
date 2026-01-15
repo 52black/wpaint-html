@@ -362,6 +362,7 @@ const historyController=createHistoryController({
   redoBtn,
   renderCurrent,
   maxHistory: MAX_HISTORY,
+  bindHotkeys: false,
   captureSnapshot: ()=>{
     const idx=timelineIndex|0;
     const cel=(Array.isArray(timeline) && timeline[idx]) ? timeline[idx] : null;
@@ -1849,46 +1850,6 @@ if(layerUpEl) layerUpEl.addEventListener('click',()=>layerMove(1));
 if(layerDownEl) layerDownEl.addEventListener('click',()=>layerMove(-1));
 if(layerMergeDownEl) layerMergeDownEl.addEventListener('click',layerMergeDown);
 bindLayerListDrag();
-window.addEventListener('keydown',(e)=>{
-  if(!isSelectMode()) return;
-  if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA')) return;
-  const isMac=navigator.platform.toLowerCase().includes('mac');
-  const ctrl=isMac ? e.metaKey : e.ctrlKey;
-  if(!ctrl) return;
-  const key=(e.key||'').toLowerCase();
-  if(key==='z'){
-    e.preventDefault();
-    e.stopPropagation();
-    if(e.shiftKey) selectHistoryController && selectHistoryController.redo();
-    else selectHistoryController && selectHistoryController.undo();
-  }else if(key==='y'){
-    e.preventDefault();
-    e.stopPropagation();
-    selectHistoryController && selectHistoryController.redo();
-  }
-},{capture:true});
-window.addEventListener('keydown',(e)=>{
-  if(!isSelectMode()) return;
-  if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA')) return;
-  const isMac=navigator.platform.toLowerCase().includes('mac');
-  const ctrl=isMac ? e.metaKey : e.ctrlKey;
-  if(!ctrl) return;
-  const key=(e.key||'').toLowerCase();
-  if(key==='c'){
-    if(!selectionHas()) return;
-    e.preventDefault();
-    selectionClipboard=cloneSelectionBuffer(selectionBuffer);
-    syncSelectUI();
-  }else if(key==='x'){
-    if(!selectionHas()) return;
-    e.preventDefault();
-    if(selectCutEl) selectCutEl.click();
-  }else if(key==='v'){
-    if(!selectionClipboard) return;
-    e.preventDefault();
-    if(selectPasteEl) selectPasteEl.click();
-  }
-});
 let canvasPanMoveListener=null;
 let canvasPanUpListener=null;
 function startCanvasPan(e){
@@ -2820,31 +2781,42 @@ sizeEl.addEventListener('input',()=>{
 });
 const fileMenuToggleEl=document.getElementById('fileMenuToggle');
 const fileMenuEl=document.getElementById('fileMenu');
-const themeToggleEl=document.getElementById('themeToggle');
+const settingsOpenEl=document.getElementById('settingsOpen');
+const settingsFooterBtnEl=document.getElementById('settingsFooterBtn');
 const UI_THEME_STORAGE_KEY='wpaint.uiTheme.v1';
+const settingsModalEl=document.getElementById('settingsModal');
+const settingsCloseEl=document.getElementById('settingsClose');
+const settingsTabGeneralEl=document.getElementById('settingsTabGeneral');
+const settingsTabAboutEl=document.getElementById('settingsTabAbout');
+const settingsTabShortcutsEl=document.getElementById('settingsTabShortcuts');
+const settingsPageGeneralEl=document.getElementById('settingsPageGeneral');
+const settingsPageAboutEl=document.getElementById('settingsPageAbout');
+const settingsPageShortcutsEl=document.getElementById('settingsPageShortcuts');
+const fullscreenToggleEl=document.getElementById('fullscreenToggle');
+const fullscreenStateEl=document.getElementById('fullscreenState');
+const shortcutsListEl=document.getElementById('shortcutsList');
+const shortcutsResetEl=document.getElementById('shortcutsReset');
+const uiThemeDefaultEl=document.getElementById('uiThemeDefault');
+const uiThemeCuteEl=document.getElementById('uiThemeCute');
+const SHORTCUTS_STORAGE_KEY='wpaint.shortcuts.v1';
 function normalizeUiTheme(raw){
   return raw==='cute'?'cute':'';
 }
 function isCuteUiTheme(){
   return document.body.getAttribute('data-ui-theme')==='cute';
 }
-function syncUiThemeToggleLabel(){
-  if(!themeToggleEl) return;
-  const label=`主题：${isCuteUiTheme()?'可爱':'默认'}`;
-  themeToggleEl.textContent=label;
-  themeToggleEl.setAttribute('aria-label',label);
+function syncUiThemeRadios(){
+  if(uiThemeDefaultEl) uiThemeDefaultEl.checked=!isCuteUiTheme();
+  if(uiThemeCuteEl) uiThemeCuteEl.checked=isCuteUiTheme();
 }
 function setUiTheme(theme){
   const next=normalizeUiTheme(theme);
   if(next) document.body.setAttribute('data-ui-theme',next);
   else document.body.removeAttribute('data-ui-theme');
-  syncUiThemeToggleLabel();
+  syncUiThemeRadios();
   try{
     localStorage.setItem(UI_THEME_STORAGE_KEY,next);
   }catch{}
-}
-function toggleUiTheme(){
-  setUiTheme(isCuteUiTheme()?'':'cute');
 }
 {
   let saved='';
@@ -2852,11 +2824,325 @@ function toggleUiTheme(){
     saved=normalizeUiTheme(localStorage.getItem(UI_THEME_STORAGE_KEY));
   }catch{}
   if(saved) document.body.setAttribute('data-ui-theme',saved);
-  syncUiThemeToggleLabel();
+  syncUiThemeRadios();
 }
-if(themeToggleEl){
-  themeToggleEl.addEventListener('click',()=>{
-    toggleUiTheme();
+makeModalDraggable(settingsModalEl);
+let settingsActivePage='general';
+const settingsShortcutsMedia=window.matchMedia ? window.matchMedia('(hover:hover) and (pointer:fine)') : null;
+function canShowSettingsShortcuts(){
+  if(!settingsTabShortcutsEl || !settingsPageShortcutsEl) return false;
+  if(!settingsShortcutsMedia) return true;
+  return settingsShortcutsMedia.matches;
+}
+function syncSettingsShortcutsVisibility(){
+  const show=canShowSettingsShortcuts();
+  if(settingsTabShortcutsEl) settingsTabShortcutsEl.hidden=!show;
+  if(settingsPageShortcutsEl && !show) settingsPageShortcutsEl.hidden=true;
+  if(!show && settingsActivePage==='shortcuts') settingsActivePage='general';
+}
+function isFullscreen(){
+  return Boolean(document.fullscreenElement);
+}
+function syncFullscreenUI(){
+  if(!fullscreenToggleEl) return;
+  fullscreenToggleEl.textContent=isFullscreen()?'退出全屏':'进入全屏';
+  if(fullscreenStateEl) fullscreenStateEl.textContent=isFullscreen()?'当前：全屏':'';
+}
+async function toggleFullscreen(){
+  try{
+    if(isFullscreen()) await document.exitFullscreen();
+    else await document.documentElement.requestFullscreen();
+  }catch{}
+  syncFullscreenUI();
+}
+if(fullscreenToggleEl) fullscreenToggleEl.addEventListener('click',toggleFullscreen);
+document.addEventListener('fullscreenchange',syncFullscreenUI);
+syncFullscreenUI();
+
+function normalizeShortcutKey(raw){
+  const key=String(raw||'');
+  const lower=key.toLowerCase();
+  if(lower==='esc') return 'escape';
+  if(lower==='space') return ' ';
+  return lower;
+}
+function isShortcutModifierKey(key){
+  const k=String(key||'');
+  return k==='Shift' || k==='Control' || k==='Alt' || k==='Meta';
+}
+function isMacPlatform(){
+  return typeof navigator!=='undefined' && typeof navigator.platform==='string' && navigator.platform.toLowerCase().includes('mac');
+}
+function getEventModKey(e){
+  return isMacPlatform() ? e.metaKey : e.ctrlKey;
+}
+function eventToCombo(e){
+  const key=normalizeShortcutKey(e.key||'');
+  return {
+    key,
+    mod: Boolean(getEventModKey(e)),
+    shift: Boolean(e.shiftKey),
+    alt: Boolean(e.altKey),
+  };
+}
+function comboEquals(a,b){
+  if(!a || !b) return false;
+  return a.key===b.key && Boolean(a.mod)===Boolean(b.mod) && Boolean(a.shift)===Boolean(b.shift) && Boolean(a.alt)===Boolean(b.alt);
+}
+function formatCombo(combo){
+  if(!combo || !combo.key) return '未设置';
+  const parts=[];
+  if(combo.alt) parts.push('Alt');
+  if(combo.shift) parts.push('Shift');
+  if(combo.mod) parts.push(isMacPlatform() ? '⌘' : 'Ctrl');
+  let k=combo.key;
+  if(k===' ') k='Space';
+  else if(k==='escape') k='Esc';
+  else if(k==='delete') k='Del';
+  else if(k==='backspace') k='Backspace';
+  else if(k.length===1) k=k.toUpperCase();
+  else if(/^f\d{1,2}$/.test(k)) k=k.toUpperCase();
+  else if(k.startsWith('arrow')) k='Arrow';
+  parts.push(k);
+  return parts.join(' + ');
+}
+const shortcutDefs=[
+  { id:'undo', label:'撤销', slots:1, defaults:[{ key:'z', mod:true, shift:false, alt:false }] },
+  { id:'redo', label:'重做', slots:2, defaults:[{ key:'y', mod:true, shift:false, alt:false },{ key:'z', mod:true, shift:true, alt:false }] },
+  { id:'selectCopy', label:'复制（选择模式）', slots:1, defaults:[{ key:'c', mod:true, shift:false, alt:false }] },
+  { id:'selectCut', label:'剪切（选择模式）', slots:1, defaults:[{ key:'x', mod:true, shift:false, alt:false }] },
+  { id:'selectPaste', label:'粘贴（选择模式）', slots:1, defaults:[{ key:'v', mod:true, shift:false, alt:false }] },
+  { id:'toggleFullscreen', label:'切换全屏', slots:1, defaults:[] },
+];
+function buildDefaultShortcuts(){
+  const out={};
+  for(const def of shortcutDefs){
+    out[def.id]=Array.from({ length:def.slots },(_,i)=>def.defaults[i] ?? null);
+  }
+  return out;
+}
+function normalizeShortcuts(raw){
+  const defaults=buildDefaultShortcuts();
+  const src=(raw && typeof raw==='object') ? raw : {};
+  const out={};
+  for(const def of shortcutDefs){
+    const arr=Array.isArray(src[def.id]) ? src[def.id] : [];
+    const slots=[];
+    for(let i=0;i<def.slots;i++){
+      const c=arr[i];
+      if(c && typeof c==='object' && typeof c.key==='string' && c.key){
+        slots.push({
+          key: normalizeShortcutKey(c.key),
+          mod: Boolean(c.mod),
+          shift: Boolean(c.shift),
+          alt: Boolean(c.alt),
+        });
+      }else if(c===null){
+        slots.push(null);
+      }else{
+        slots.push(defaults[def.id]?.[i] ?? null);
+      }
+    }
+    out[def.id]=slots;
+  }
+  return out;
+}
+function loadShortcuts(){
+  try{
+    const parsed=JSON.parse(localStorage.getItem(SHORTCUTS_STORAGE_KEY)||'null');
+    return normalizeShortcuts(parsed);
+  }catch{
+    return normalizeShortcuts(null);
+  }
+}
+function saveShortcuts(map){
+  try{
+    localStorage.setItem(SHORTCUTS_STORAGE_KEY,JSON.stringify(map));
+  }catch{}
+}
+let shortcuts=loadShortcuts();
+let shortcutsRendered=false;
+let shortcutRecording=null;
+
+function findShortcutMatch(combo){
+  for(const def of shortcutDefs){
+    const arr=Array.isArray(shortcuts[def.id]) ? shortcuts[def.id] : [];
+    for(let i=0;i<arr.length;i++){
+      if(comboEquals(arr[i],combo)) return { id:def.id, slot:i };
+    }
+  }
+  return null;
+}
+function performShortcutAction(actionId){
+  if(actionId==='undo'){
+    if(isSelectMode() && selectHistoryController){ selectHistoryController.undo(); return true; }
+    undo();
+    return true;
+  }
+  if(actionId==='redo'){
+    if(isSelectMode() && selectHistoryController){ selectHistoryController.redo(); return true; }
+    redo();
+    return true;
+  }
+  if(actionId==='selectCopy'){
+    if(!isSelectMode()) return false;
+    if(selectCopyEl){ selectCopyEl.click(); return true; }
+    return false;
+  }
+  if(actionId==='selectCut'){
+    if(!isSelectMode()) return false;
+    if(selectCutEl){ selectCutEl.click(); return true; }
+    return false;
+  }
+  if(actionId==='selectPaste'){
+    if(!isSelectMode()) return false;
+    if(selectPasteEl){ selectPasteEl.click(); return true; }
+    return false;
+  }
+  if(actionId==='toggleFullscreen'){
+    toggleFullscreen();
+    return true;
+  }
+  return false;
+}
+function onGlobalShortcutsKeyDown(e){
+  if(shortcutRecording) return;
+  if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA')) return;
+  if(e.repeat) return;
+  if(isShortcutModifierKey(e.key)) return;
+  const combo=eventToCombo(e);
+  const match=findShortcutMatch(combo);
+  if(!match) return;
+  const ran=performShortcutAction(match.id);
+  if(ran){
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}
+window.addEventListener('keydown',onGlobalShortcutsKeyDown,{capture:true});
+
+function renderShortcutsPage(){
+  if(shortcutsRendered) return;
+  if(!shortcutsListEl) return;
+  shortcutsRendered=true;
+  shortcutsListEl.innerHTML='';
+  for(const def of shortcutDefs){
+    const slots=shortcuts[def.id] || [];
+    const row=document.createElement('div');
+    row.className='row';
+    const label=document.createElement('span');
+    label.textContent=def.label;
+    const slotsWrap=document.createElement('div');
+    slotsWrap.className='shortcut-slots';
+    for(let i=0;i<def.slots;i++){
+      const btn=document.createElement('button');
+      btn.type='button';
+      btn.className='action-btn shortcut-btn';
+      btn.dataset.actionId=def.id;
+      btn.dataset.slot=String(i);
+      const kbd=document.createElement('kbd');
+      kbd.textContent=formatCombo(slots[i]);
+      btn.appendChild(kbd);
+      btn.addEventListener('click',()=>{
+        shortcutRecording={ actionId:def.id, slot:i, button:btn, prevText:kbd.textContent };
+        kbd.textContent='按下新的组合键…';
+      });
+      slotsWrap.appendChild(btn);
+    }
+    row.appendChild(label);
+    row.appendChild(slotsWrap);
+    shortcutsListEl.appendChild(row);
+  }
+}
+function rerenderShortcuts(){
+  shortcutsRendered=false;
+  if(shortcutsListEl) shortcutsListEl.innerHTML='';
+  if(settingsActivePage==='shortcuts') renderShortcutsPage();
+}
+function onShortcutRecordKeyDown(e){
+  if(!shortcutRecording) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if(isShortcutModifierKey(e.key)) return;
+  const { actionId, slot, button }=shortcutRecording;
+  const kbd=button ? button.querySelector('kbd') : null;
+  const combo=eventToCombo(e);
+  const dup=findShortcutMatch(combo);
+  if(dup && !(dup.id===actionId && dup.slot===slot)){
+    if(kbd) kbd.textContent='已被占用，换一个';
+    shortcutRecording=null;
+    window.setTimeout(()=>{ rerenderShortcuts(); },350);
+    return;
+  }
+  if(!shortcuts[actionId]) shortcuts[actionId]=[];
+  shortcuts[actionId][slot]=combo;
+  saveShortcuts(shortcuts);
+  if(kbd) kbd.textContent=formatCombo(combo);
+  shortcutRecording=null;
+}
+window.addEventListener('keydown',onShortcutRecordKeyDown,{capture:true});
+if(shortcutsResetEl){
+  shortcutsResetEl.addEventListener('click',()=>{
+    shortcuts=buildDefaultShortcuts();
+    saveShortcuts(shortcuts);
+    rerenderShortcuts();
+  });
+}
+
+function setSettingsPage(page){
+  syncSettingsShortcutsVisibility();
+  settingsActivePage=(page==='about' || page==='shortcuts') ? page : 'general';
+  if(settingsActivePage==='shortcuts' && !canShowSettingsShortcuts()) settingsActivePage='general';
+  const isGeneral=settingsActivePage==='general';
+  const isAbout=settingsActivePage==='about';
+  const isShortcuts=settingsActivePage==='shortcuts';
+  if(settingsTabGeneralEl){
+    settingsTabGeneralEl.classList.toggle('is-active',isGeneral);
+    settingsTabGeneralEl.setAttribute('aria-selected',isGeneral?'true':'false');
+  }
+  if(settingsTabAboutEl){
+    settingsTabAboutEl.classList.toggle('is-active',isAbout);
+    settingsTabAboutEl.setAttribute('aria-selected',isAbout?'true':'false');
+  }
+  if(settingsTabShortcutsEl){
+    settingsTabShortcutsEl.classList.toggle('is-active',isShortcuts);
+    settingsTabShortcutsEl.setAttribute('aria-selected',isShortcuts?'true':'false');
+  }
+  if(settingsPageGeneralEl) settingsPageGeneralEl.hidden=!isGeneral;
+  if(settingsPageAboutEl) settingsPageAboutEl.hidden=!isAbout;
+  if(settingsPageShortcutsEl) settingsPageShortcutsEl.hidden=!isShortcuts;
+  if(isShortcuts) renderShortcutsPage();
+}
+function openSettings(){
+  if(!settingsModalEl) return;
+  syncSettingsShortcutsVisibility();
+  setSettingsPage(settingsActivePage);
+  syncUiThemeRadios();
+  openModal(settingsModalEl);
+}
+function closeSettings(){
+  if(!settingsModalEl) return;
+  closeModal(settingsModalEl);
+}
+if(settingsOpenEl) settingsOpenEl.addEventListener('click',openSettings);
+if(settingsFooterBtnEl) settingsFooterBtnEl.addEventListener('click',openSettings);
+if(settingsCloseEl) settingsCloseEl.addEventListener('click',closeSettings);
+if(settingsTabGeneralEl) settingsTabGeneralEl.addEventListener('click',()=>setSettingsPage('general'));
+if(settingsTabAboutEl) settingsTabAboutEl.addEventListener('click',()=>setSettingsPage('about'));
+if(settingsTabShortcutsEl) settingsTabShortcutsEl.addEventListener('click',()=>setSettingsPage('shortcuts'));
+if(settingsModalEl){
+  settingsModalEl.addEventListener('mousedown',(e)=>{
+    if(e.target===settingsModalEl) closeSettings();
+  });
+}
+if(uiThemeDefaultEl){
+  uiThemeDefaultEl.addEventListener('change',()=>{
+    if(uiThemeDefaultEl.checked) setUiTheme('');
+  });
+}
+if(uiThemeCuteEl){
+  uiThemeCuteEl.addEventListener('change',()=>{
+    if(uiThemeCuteEl.checked) setUiTheme('cute');
   });
 }
 function updateFileMenuPlacement(){
@@ -2906,27 +3192,8 @@ document.addEventListener('pointerdown',(e)=>{
 fileMenuEl.addEventListener('click',(e)=>{
   if(e.target.closest('button')) closeFileMenu();
 });
-const aboutBtnEl=document.getElementById('aboutBtn');
-const aboutModalEl=document.getElementById('aboutModal');
-const aboutCloseEl=document.getElementById('aboutClose');
-makeModalDraggable(aboutModalEl);
-function openAbout(){
-  if(!aboutModalEl) return;
-  openModal(aboutModalEl);
-}
-function closeAbout(){
-  if(!aboutModalEl) return;
-  closeModal(aboutModalEl);
-}
-if(aboutBtnEl) aboutBtnEl.addEventListener('click',openAbout);
-if(aboutCloseEl) aboutCloseEl.addEventListener('click',closeAbout);
-if(aboutModalEl){
-  aboutModalEl.addEventListener('mousedown',(e)=>{
-    if(e.target===aboutModalEl) closeAbout();
-  });
-}
 window.addEventListener('keydown',(e)=>{
-  if(e.key==='Escape' && aboutModalEl && aboutModalEl.classList.contains('is-open')) closeAbout();
+  if(e.key==='Escape' && settingsModalEl && settingsModalEl.classList.contains('is-open')) closeSettings();
 });
 const timelineController=createTimelineController({
   clamp,

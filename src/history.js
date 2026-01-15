@@ -6,6 +6,7 @@ export function createHistoryController({
   maxHistory=80,
   captureSnapshot,
   applySnapshot,
+  bindHotkeys=true,
 }){
   const undoStack=[];
   const redoStack=[];
@@ -70,6 +71,7 @@ export function createHistoryController({
     if(undoBtn) undoBtn.addEventListener('click',undo);
     if(redoBtn) redoBtn.addEventListener('click',redo);
 
+    if(!bindHotkeys) return;
     window.addEventListener('keydown',e=>{
       if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='SELECT' || e.target.tagName==='TEXTAREA')) return;
       const isMac=navigator.platform.toLowerCase().includes('mac');
@@ -92,4 +94,3 @@ export function createHistoryController({
 
   return { pushHistory, undo, redo, reset, syncUI };
 }
-
