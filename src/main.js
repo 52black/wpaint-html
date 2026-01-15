@@ -645,10 +645,35 @@ function makeFrameOffsets(base,maxAbs){
   }
   return out;
 }
-function render(frame){
-  // 把“颜色值帧”渲染成 RGBA 像素；值 0 代表透明
-  const img=ctx.createImageData(W,H);
+let mainImageData=null;
+function render(frame,rect){
+  if(!mainImageData || mainImageData.width!==W || mainImageData.height!==H){
+    mainImageData=ctx.createImageData(W,H);
+  }
+  const img=mainImageData;
   const data=img.data;
+  if(rect && rect.w>0 && rect.h>0){
+    const x0=Math.max(0,rect.x|0);
+    const y0=Math.max(0,rect.y|0);
+    const x1=Math.min(W,(x0+(rect.w|0))|0);
+    const y1=Math.min(H,(y0+(rect.h|0))|0);
+    for(let y=y0;y<y1;y++){
+      const row=y*W;
+      for(let x=x0;x<x1;x++){
+        const i=row+x;
+        const val=frame[i];
+        const o=i*4;
+        if(val===0){
+          data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
+        }else{
+          const [r,g,b]=hexToRGB(colorMap[val]);
+          data[o]=r; data[o+1]=g; data[o+2]=b; data[o+3]=255;
+        }
+      }
+    }
+    ctx.putImageData(img,0,0,x0,y0,(x1-x0)|0,(y1-y0)|0);
+    return;
+  }
   for(let i=0;i<frame.length;i++){
     const val=frame[i];
     const o=i*4;
@@ -664,8 +689,12 @@ function render(frame){
 const previewCanvas=document.getElementById('preview');
 const previewCtx=previewCanvas.getContext('2d');
 previewCtx.imageSmoothingEnabled=false;
+let previewImageData=null;
 let activeLayerIndex=0;
 let compositeDirty=true;
+let compositeDirtyRect=null;
+let compositeDirtyFrameMask=0;
+let compositeDirtyIsFull=true;
 let compositeScratchFrame=null;
 const bayer4=new Uint8Array([0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5]);
 let ditherMask=null;
@@ -680,7 +709,30 @@ function rebuildDitherMask(){
     }
   }
 }
-function markCompositeDirty(){ compositeDirty=true; }
+function markCompositeDirty(rect,frameMask){
+  compositeDirty=true;
+  if(!rect){
+    compositeDirtyRect=null;
+    compositeDirtyFrameMask=0;
+    compositeDirtyIsFull=true;
+    return;
+  }
+  if(compositeDirtyIsFull) return;
+  const mask=(frameMask==null) ? 0b1111 : (frameMask|0);
+  compositeDirtyFrameMask|=mask;
+  const x0=rect.x|0;
+  const y0=rect.y|0;
+  const x1=(rect.x+(rect.w|0))|0;
+  const y1=(rect.y+(rect.h|0))|0;
+  if(!compositeDirtyRect){
+    compositeDirtyRect={ x0, y0, x1, y1 };
+    return;
+  }
+  compositeDirtyRect.x0=Math.min(compositeDirtyRect.x0,x0);
+  compositeDirtyRect.y0=Math.min(compositeDirtyRect.y0,y0);
+  compositeDirtyRect.x1=Math.max(compositeDirtyRect.x1,x1);
+  compositeDirtyRect.y1=Math.max(compositeDirtyRect.y1,y1);
+}
 function getCurrentCel(){
   if(!Array.isArray(timeline)) return null;
   return timeline[timelineIndex|0] || null;
@@ -752,6 +804,42 @@ function rebuildCelComposite(cel){
     }
   }
 }
+function rebuildCelCompositeRect(cel,rect,frameMask){
+  ensureCelModel(cel);
+  if(!rect) return;
+  const layers=cel.layers;
+  const len=(W*H)|0;
+  if(!ditherMask || ditherMask.length!==len) rebuildDitherMask();
+  const x0=clamp(rect.x0|0,0,W|0);
+  const y0=clamp(rect.y0|0,0,H|0);
+  const x1=clamp(rect.x1|0,0,W|0);
+  const y1=clamp(rect.y1|0,0,H|0);
+  if(x1<=x0 || y1<=y0) return;
+  for(let fi=0;fi<4;fi++){
+    if(((frameMask>>fi)&1)===0) continue;
+    const out=cel.frames[fi];
+    for(let y=y0;y<y1;y++){
+      const row=y*W;
+      for(let x=x0;x<x1;x++){
+        const i=row+x;
+        let v=0;
+        for(let li=layers.length-1;li>=0;li--){
+          const layer=layers[li];
+          if(!layer.visible) continue;
+          const opacity=(layer.opacity==null ? 100 : (layer.opacity|0));
+          if(opacity<=0) continue;
+          const pv=layer.frames[fi][i];
+          if(pv===0) continue;
+          if(opacity>=100){ v=pv; break; }
+          const keepCount=((opacity*16)/100)|0;
+          if(keepCount<=0) continue;
+          if(ditherMask[i]<keepCount){ v=pv; break; }
+        }
+        out[i]=v;
+      }
+    }
+  }
+}
 function cloneCelDeep(cel){
   ensureCelModel(cel);
   const layers=cel.layers.map(l=>({
@@ -777,8 +865,15 @@ function rebuildCurrentCompositeIfNeeded(){
   if(!compositeDirty) return;
   const cel=getCurrentCel();
   if(!cel) return;
-  rebuildCelComposite(cel);
+  if(!compositeDirtyIsFull && compositeDirtyRect && compositeDirtyFrameMask){
+    rebuildCelCompositeRect(cel,compositeDirtyRect,compositeDirtyFrameMask);
+  }else{
+    rebuildCelComposite(cel);
+  }
   compositeDirty=false;
+  compositeDirtyRect=null;
+  compositeDirtyFrameMask=0;
+  compositeDirtyIsFull=false;
 }
 function buildCompositeScratchFrame(fi,activeOverrideFrame){
   const cel=getCurrentCel();
@@ -819,7 +914,10 @@ function renderPreview(){
   // 换色界面预览固定看“稳定帧” frame3
   // 直接按预览尺寸采样渲染，避免每次都生成 360x265 的大 ImageData（系统颜色选择器拖动时会卡）
   const pw=previewCanvas.width, ph=previewCanvas.height;
-  const img=previewCtx.createImageData(pw,ph);
+  if(!previewImageData || previewImageData.width!==pw || previewImageData.height!==ph){
+    previewImageData=previewCtx.createImageData(pw,ph);
+  }
+  const img=previewImageData;
   const data=img.data;
   let frame=null;
   if(isSelectMode() && selectionHas() && selectionBaseFrames && selectionBuffer){
@@ -886,7 +984,10 @@ function blitBufferFrameAt(dstFrame,rect,buffer,fi,options){
     }
   }
 }
-function renderCurrent(){
+function renderCurrent(options){
+  const rect=(options && options.rect) ? options.rect : null;
+  const skipPreview=Boolean(options && options.skipPreview);
+  const allowPartial=Boolean(rect && (!containerEl || !containerEl.classList.contains('color-mode')) && !(isSelectMode() && selectionHas() && selectionBaseFrames && selectionBuffer));
   // 换色界面不显示绘画区，跳过大画布渲染，避免调色时卡顿
   if(!containerEl || !containerEl.classList.contains('color-mode')){
     if(isSelectMode() && selectionHas() && selectionBaseFrames && selectionBuffer){
@@ -901,17 +1002,58 @@ function renderCurrent(){
       render(composite);
     }else{
       rebuildCurrentCompositeIfNeeded();
-      render(getCompositeFrame(displayFrame));
+      render(getCompositeFrame(displayFrame),allowPartial ? rect : null);
     }
   }
-  renderPreview();
+  if(!skipPreview) renderPreview();
+}
+let renderRafId=null;
+let pendingRenderRect=null;
+let pendingRenderFull=false;
+let pendingSkipPreview=true;
+function scheduleRender(rect,options){
+  const skip=Boolean(options && options.skipPreview);
+  if(renderRafId==null){
+    pendingRenderRect=null;
+    pendingRenderFull=false;
+    pendingSkipPreview=skip;
+  }else{
+    pendingSkipPreview=pendingSkipPreview && skip;
+  }
+  if(!rect){
+    pendingRenderFull=true;
+    pendingRenderRect=null;
+  }else if(!pendingRenderFull){
+    if(!pendingRenderRect){
+      pendingRenderRect={ x:rect.x|0, y:rect.y|0, w:rect.w|0, h:rect.h|0 };
+    }else{
+      const x0=Math.min(pendingRenderRect.x|0,rect.x|0);
+      const y0=Math.min(pendingRenderRect.y|0,rect.y|0);
+      const x1=Math.max((pendingRenderRect.x+pendingRenderRect.w)|0,(rect.x+rect.w)|0);
+      const y1=Math.max((pendingRenderRect.y+pendingRenderRect.h)|0,(rect.y+rect.h)|0);
+      pendingRenderRect.x=x0;
+      pendingRenderRect.y=y0;
+      pendingRenderRect.w=(x1-x0)|0;
+      pendingRenderRect.h=(y1-y0)|0;
+    }
+  }
+  if(renderRafId!=null) return;
+  renderRafId=window.requestAnimationFrame(()=>{
+    renderRafId=null;
+    const rectToDraw=pendingRenderFull ? null : pendingRenderRect;
+    const skipPreviewToDraw=pendingSkipPreview;
+    pendingRenderRect=null;
+    pendingRenderFull=false;
+    pendingSkipPreview=true;
+    renderCurrent({ rect: rectToDraw, skipPreview: skipPreviewToDraw });
+  });
 }
 function startAnim(){
   // 抖动开启时循环播放 frame0~2
   stopAnim();
   const tick=()=>{
     displayFrame=(displayFrame+1)%3;
-    renderCurrent();
+    renderCurrent({ skipPreview:true });
     animId=window.setTimeout(tick,getJitterSubDelayMs(displayFrame));
   };
   animId=window.setTimeout(tick,getJitterSubDelayMs(displayFrame));
@@ -935,20 +1077,31 @@ function applyPlaybackMode(){
   }
 }
 function drawSegment(from,to,val){
-  if(!from || !to) return;
+  if(!from || !to) return null;
   const size=toolSettings[currentTool]?.size ?? 1;
   const erasing=val===0;
+  const baseJitter=erasing ? 0 : (jitterLevel||0);
+  const toolJitterScale=(currentTool==='pencil') ? 2 : 1;
+  const maxAbs=baseJitter*toolJitterScale;
+  const jitterActive=maxAbs>0;
+  const baseSize=(toolSettings[currentTool]?.size ?? 1)|0;
+  const worstSize=(currentTool==='blobby') ? clampToolSize(baseSize+14,currentTool) : clampToolSize(baseSize,currentTool);
+  const r=Math.floor(((currentTool==='blobby' || currentTool==='stippleTiny' || currentTool==='softLrg' || currentTool==='palette') ? worstSize : size)/2);
+  const pad=(r+maxAbs+1)|0;
+  const x0=clamp(Math.min(from.x,to.x)-pad,0,W|0);
+  const y0=clamp(Math.min(from.y,to.y)-pad,0,H|0);
+  const x1=clamp(Math.max(from.x,to.x)+pad+1,0,W|0);
+  const y1=clamp(Math.max(from.y,to.y)+pad+1,0,H|0);
+  const dirtyRect={ x:x0, y:y0, w:Math.max(0,(x1-x0)|0), h:Math.max(0,(y1-y0)|0) };
+  const dirtyMask=0b1111;
+
   if(erasing){
     for(let fi=0;fi<4;fi++){
       drawLineValue(frames[fi],from,to,val,size);
     }
-    markCompositeDirty();
-    return;
+    markCompositeDirty(dirtyRect,0b1111);
+    return dirtyRect;
   }
-  const baseJitter=(jitterLevel||0);
-  const toolJitterScale=(currentTool==='pencil') ? 2 : 1;
-  const maxAbs=baseJitter*toolJitterScale;
-  const jitterActive=maxAbs>0;
   if(currentTool==='palette'){
     if(jitterActive){
       const base=nextJitterBase();
@@ -963,8 +1116,8 @@ function drawSegment(from,to,val){
       }
     }
     patternController.stampPalette(frames[3],to.x,to.y,val,size);
-    markCompositeDirty();
-    return;
+    markCompositeDirty(dirtyRect,dirtyMask);
+    return dirtyRect;
   }
   if(currentTool==='blobby' || currentTool==='stippleTiny' || currentTool==='softLrg'){
     if(jitterActive){
@@ -980,8 +1133,8 @@ function drawSegment(from,to,val){
       }
     }
     drawLineTool(frames[3],from,to,val,currentTool);
-    markCompositeDirty();
-    return;
+    markCompositeDirty(dirtyRect,dirtyMask);
+    return dirtyRect;
   }
   if(jitterActive){
     const base=nextJitterBase();
@@ -996,7 +1149,8 @@ function drawSegment(from,to,val){
     }
   }
   drawLineValue(frames[3],from,to,val,size);
-  markCompositeDirty();
+  markCompositeDirty(dirtyRect,dirtyMask);
+  return dirtyRect;
 }
 function pointerCanDraw(e){
   if(e.button!=null && e.button!==0) return false;
@@ -1903,8 +2057,8 @@ canvas.addEventListener('pointerdown',e=>{
   pushHistory();
   last=getPos(e);
   const val=getPaintValue();
-  drawSegment(last,last,val);
-  renderCurrent();
+  const rect=drawSegment(last,last,val);
+  scheduleRender(rect,{ skipPreview:true });
 });
 canvas.addEventListener('pointermove',e=>{
   if(isCropMode()) return;
@@ -1914,13 +2068,14 @@ canvas.addEventListener('pointermove',e=>{
   e.preventDefault();
   const p=getPos(e);
   const val=getPaintValue();
+  let rect=null;
   if(currentTool==='palette'){
-    drawSegment(p,p,val);
+    rect=drawSegment(p,p,val);
   }else{
-    drawSegment(last,p,val);
+    rect=drawSegment(last,p,val);
   }
   last=p;
-  renderCurrent();
+  scheduleRender(rect,{ skipPreview:true });
 });
 function stopDrawing(e){
   if(canvasPanning && (!e || e.pointerId==null || e.pointerId===canvasPanPointerId)){
@@ -1947,6 +2102,7 @@ function stopDrawing(e){
   if(e && drawingPointerId!=null && e.pointerId!==drawingPointerId) return;
   drawing=false;
   drawingPointerId=null;
+  scheduleRender(null,{ skipPreview:false });
   try{
     if(e && e.pointerId!=null) canvas.releasePointerCapture(e.pointerId);
   }catch{}
@@ -2892,9 +3048,9 @@ function comboEquals(a,b){
 function formatCombo(combo){
   if(!combo || !combo.key) return '未设置';
   const parts=[];
-  if(combo.alt) parts.push('Alt');
-  if(combo.shift) parts.push('Shift');
   if(combo.mod) parts.push(isMacPlatform() ? '⌘' : 'Ctrl');
+  if(combo.shift) parts.push('Shift');
+  if(combo.alt) parts.push('Alt');
   let k=combo.key;
   if(k===' ') k='Space';
   else if(k==='escape') k='Esc';
@@ -2909,6 +3065,12 @@ function formatCombo(combo){
 const shortcutDefs=[
   { id:'undo', label:'撤销', slots:1, defaults:[{ key:'z', mod:true, shift:false, alt:false }] },
   { id:'redo', label:'重做', slots:2, defaults:[{ key:'y', mod:true, shift:false, alt:false },{ key:'z', mod:true, shift:true, alt:false }] },
+  { id:'toolPen', label:'工具：铅笔', slots:1, defaults:[{ key:'1', mod:true, shift:false, alt:false }] },
+  { id:'toolPen2', label:'工具：钢笔', slots:1, defaults:[{ key:'2', mod:true, shift:false, alt:false }] },
+  { id:'toolBlobby', label:'工具：毛团笔', slots:1, defaults:[{ key:'3', mod:true, shift:false, alt:false }] },
+  { id:'toolStippleTiny', label:'工具：颗粒笔', slots:1, defaults:[{ key:'4', mod:true, shift:false, alt:false }] },
+  { id:'toolSoftLrg', label:'工具：柔边笔', slots:1, defaults:[{ key:'5', mod:true, shift:false, alt:false }] },
+  { id:'toolEraser', label:'工具：橡皮擦', slots:1, defaults:[{ key:'6', mod:true, shift:false, alt:false }] },
   { id:'selectCopy', label:'复制（选择模式）', slots:1, defaults:[{ key:'c', mod:true, shift:false, alt:false }] },
   { id:'selectCut', label:'剪切（选择模式）', slots:1, defaults:[{ key:'x', mod:true, shift:false, alt:false }] },
   { id:'selectPaste', label:'粘贴（选择模式）', slots:1, defaults:[{ key:'v', mod:true, shift:false, alt:false }] },
@@ -2937,8 +3099,6 @@ function normalizeShortcuts(raw){
           shift: Boolean(c.shift),
           alt: Boolean(c.alt),
         });
-      }else if(c===null){
-        slots.push(null);
       }else{
         slots.push(defaults[def.id]?.[i] ?? null);
       }
@@ -2950,7 +3110,9 @@ function normalizeShortcuts(raw){
 function loadShortcuts(){
   try{
     const parsed=JSON.parse(localStorage.getItem(SHORTCUTS_STORAGE_KEY)||'null');
-    return normalizeShortcuts(parsed);
+    const normalized=normalizeShortcuts(parsed);
+    saveShortcuts(normalized);
+    return normalized;
   }catch{
     return normalizeShortcuts(null);
   }
@@ -2983,6 +3145,30 @@ function performShortcutAction(actionId){
     if(isSelectMode() && selectHistoryController){ selectHistoryController.redo(); return true; }
     redo();
     return true;
+  }
+  if(actionId==='toolPen'){
+    if(penBtn){ penBtn.click(); return true; }
+    return false;
+  }
+  if(actionId==='toolPen2'){
+    if(pen2Btn){ pen2Btn.click(); return true; }
+    return false;
+  }
+  if(actionId==='toolBlobby'){
+    if(blobbyBtn){ blobbyBtn.click(); return true; }
+    return false;
+  }
+  if(actionId==='toolStippleTiny'){
+    if(stippleTinyBtn){ stippleTinyBtn.click(); return true; }
+    return false;
+  }
+  if(actionId==='toolSoftLrg'){
+    if(softLrgBtn){ softLrgBtn.click(); return true; }
+    return false;
+  }
+  if(actionId==='toolEraser'){
+    if(eraserBtn){ eraserBtn.click(); return true; }
+    return false;
   }
   if(actionId==='selectCopy'){
     if(!isSelectMode()) return false;
