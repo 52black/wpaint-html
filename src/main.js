@@ -882,6 +882,22 @@ const previewCanvas=document.getElementById('preview');
 const previewCtx=previewCanvas.getContext('2d');
 previewCtx.imageSmoothingEnabled=false;
 let previewImageData=null;
+function syncPreviewGeometry(){
+  if(!previewCanvas) return;
+  if(!(W>0 && H>0)) return;
+  const maxW=152;
+  const maxH=112;
+  const scale=Math.min(maxW/W,maxH/H);
+  const targetW=Math.max(1,Math.round(W*scale));
+  const targetH=Math.max(1,Math.round(H*scale));
+  if(previewCanvas.width!==targetW || previewCanvas.height!==targetH){
+    previewCanvas.width=targetW;
+    previewCanvas.height=targetH;
+    previewCtx.imageSmoothingEnabled=false;
+    previewImageData=null;
+  }
+}
+syncPreviewGeometry();
 let activeLayerIndex=0;
 let compositeDirty=true;
 let compositeDirtyRect=null;
@@ -2757,6 +2773,7 @@ function setCanvasSize(newW,newH){
     selectOverlayContentEl.style.height=`${H}px`;
   }
   rebuildDitherMask();
+  syncPreviewGeometry();
 }
 async function saveWpaintProject(filename){
   const config=captureProjectConfig();
@@ -4580,20 +4597,13 @@ function applyBackground(){
   }
   const previewBg=document.getElementById('previewBg');
   if(showBgLayer){
-    if(customBgUrl){
-      previewBg.style.backgroundImage=`url("${customBgUrl}")`;
-      previewBg.style.backgroundSize='contain';
-      previewBg.style.backgroundRepeat='no-repeat';
-      previewBg.style.backgroundPosition='center';
-      previewBg.style.backgroundColor=bg1;
-    }else{
-      previewBg.style.backgroundImage=
-        `linear-gradient(45deg, #dcdcdc 25%, transparent 25%, transparent 75%, #dcdcdc 75%, #dcdcdc),
-         linear-gradient(45deg, ${bg1} 25%, transparent 25%, transparent 75%, ${bg1} 75%, ${bg1})`;
-      previewBg.style.backgroundSize='16px 16px';
-      previewBg.style.backgroundPosition='0 0, 8px 8px';
-      previewBg.style.backgroundColor='';
-    }
+    previewBg.style.backgroundImage=
+      `linear-gradient(45deg, #dcdcdc 25%, transparent 25%, transparent 75%, #dcdcdc 75%, #dcdcdc),
+       linear-gradient(45deg, ${bg1} 25%, transparent 25%, transparent 75%, ${bg1} 75%, ${bg1})`;
+    previewBg.style.backgroundSize='16px 16px';
+    previewBg.style.backgroundPosition='0 0, 8px 8px';
+    previewBg.style.backgroundRepeat='repeat';
+    previewBg.style.backgroundColor='';
   }else{
     previewBg.style.backgroundImage='none';
     previewBg.style.backgroundColor=bg1;
