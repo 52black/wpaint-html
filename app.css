@@ -470,9 +470,9 @@ body[data-ui-theme="cute"] .anim-frame-btn.is-selected{ box-shadow: 0 0 0 2px rg
 
 body[data-ui-theme="cat"]{
   --cat-text: #2b1b12;
-  --cat-border: rgba(125,92,58,.26);
-  --cat-surface: rgba(255,245,214,.96);
-  --cat-surface-hover: rgba(255,245,214,.99);
+  --cat-border: rgba(125,92,58,.18);
+  --cat-surface: #FFFDF0;
+  --cat-surface-hover: #FFFBE8;
   --cat-active: rgba(255,120,186,.92);
   --cat-active-hover: rgba(255,120,186,.98);
 }
@@ -483,7 +483,7 @@ body[data-ui-theme="cat"] .container::after{
   right: 0;
   width: 152px;
   height: 100%;
-  background-color: #fff2bf;
+  background-color: #FDFBE4;
   pointer-events: none;
   z-index: 0;
 }
