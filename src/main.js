@@ -342,6 +342,15 @@ const resizeCancelEl=document.getElementById('resizeCancel');
 const resizeApplyEl=document.getElementById('resizeApply');
 const resizeWEl=document.getElementById('resizeW');
 const resizeHEl=document.getElementById('resizeH');
+const bgCropModalEl=document.getElementById('bgCropModal');
+const bgCropCloseEl=document.getElementById('bgCropClose');
+const bgCropCancelEl=document.getElementById('bgCropCancel');
+const bgCropApplyEl=document.getElementById('bgCropApply');
+const bgCropResetEl=document.getElementById('bgCropReset');
+const bgCropStageEl=document.getElementById('bgCropStage');
+const bgCropCanvasEl=document.getElementById('bgCropCanvas');
+const bgCropZoomEl=document.getElementById('bgCropZoom');
+const bgCropCtx=bgCropCanvasEl ? bgCropCanvasEl.getContext('2d') : null;
 const clearAllLayersWrapEl=document.getElementById('clearAllLayersWrap');
 const clearAllLayersEl=document.getElementById('clearAllLayers');
 const resizeGridEl=document.getElementById('resizeGrid');
@@ -444,6 +453,19 @@ const layerDownEl=document.getElementById('layerDown');
 const layerMergeDownEl=document.getElementById('layerMergeDown');
 const layerListEl=document.getElementById('layerList');
 let customBgUrl='';
+let bgCropTempUrl='';
+let bgCropImg=null;
+let bgCropStageW=0;
+let bgCropStageH=0;
+let bgCropMinScale=1;
+let bgCropScale=1;
+let bgCropOffsetX=0;
+let bgCropOffsetY=0;
+let bgCropDragPointerId=null;
+let bgCropDragStartX=0;
+let bgCropDragStartY=0;
+let bgCropDragStartOffX=0;
+let bgCropDragStartOffY=0;
 const outlineColorStore=Array.from({length: MAX_COLOR_INDEX+1},()=>null);
 for(let i=OUTLINE_FIRST;i<=OUTLINE_LAST;i++){
   outlineColorStore[i]=colorMap[i] ?? colorMap[2];
@@ -5062,17 +5084,220 @@ if(wpaintFileEl){
     renderCurrent();
   });
 }
+
+function syncBgCropStageAspect(){
+  if(!bgCropStageEl) return;
+  const w=(canvasViewportEl && canvasViewportEl.clientWidth) ? (canvasViewportEl.clientWidth|0) : 360;
+  const h=(canvasViewportEl && canvasViewportEl.clientHeight) ? (canvasViewportEl.clientHeight|0) : 340;
+  bgCropStageEl.style.setProperty('--bg-crop-aspect',`${Math.max(1,w)} / ${Math.max(1,h)}`);
+}
+function resizeBgCropCanvas(){
+  if(!bgCropStageEl || !bgCropCanvasEl || !bgCropCtx) return;
+  const w=bgCropStageEl.clientWidth|0;
+  const h=bgCropStageEl.clientHeight|0;
+  bgCropStageW=Math.max(1,w);
+  bgCropStageH=Math.max(1,h);
+  const dpr=Math.max(1,window.devicePixelRatio||1);
+  const cw=Math.max(1,Math.round(bgCropStageW*dpr));
+  const ch=Math.max(1,Math.round(bgCropStageH*dpr));
+  if(bgCropCanvasEl.width!==cw || bgCropCanvasEl.height!==ch){
+    bgCropCanvasEl.width=cw;
+    bgCropCanvasEl.height=ch;
+  }
+}
+function clampBgCropOffsets(){
+  if(!bgCropImg) return;
+  const imgW=(bgCropImg.naturalWidth||bgCropImg.width||0);
+  const imgH=(bgCropImg.naturalHeight||bgCropImg.height||0);
+  const sw=bgCropStageW||1;
+  const sh=bgCropStageH||1;
+  const minX=sw-imgW*bgCropScale;
+  const minY=sh-imgH*bgCropScale;
+  bgCropOffsetX=clamp(bgCropOffsetX,Math.min(0,minX),Math.max(0,minX));
+  bgCropOffsetY=clamp(bgCropOffsetY,Math.min(0,minY),Math.max(0,minY));
+}
+function renderBgCrop(){
+  if(!bgCropCanvasEl || !bgCropCtx || !bgCropImg) return;
+  const imgW=(bgCropImg.naturalWidth||bgCropImg.width||0);
+  const imgH=(bgCropImg.naturalHeight||bgCropImg.height||0);
+  if(!(imgW>0 && imgH>0)) return;
+  const dpr=Math.max(1,window.devicePixelRatio||1);
+  bgCropCtx.setTransform(1,0,0,1,0,0);
+  bgCropCtx.clearRect(0,0,bgCropCanvasEl.width,bgCropCanvasEl.height);
+  bgCropCtx.setTransform(dpr,0,0,dpr,0,0);
+  bgCropCtx.fillStyle='#fff';
+  bgCropCtx.fillRect(0,0,bgCropStageW||1,bgCropStageH||1);
+  bgCropCtx.imageSmoothingEnabled=true;
+  bgCropCtx.translate(bgCropOffsetX,bgCropOffsetY);
+  bgCropCtx.scale(bgCropScale,bgCropScale);
+  bgCropCtx.drawImage(bgCropImg,0,0);
+}
+function initBgCropView(){
+  if(!bgCropImg) return;
+  resizeBgCropCanvas();
+  const imgW=(bgCropImg.naturalWidth||bgCropImg.width||0);
+  const imgH=(bgCropImg.naturalHeight||bgCropImg.height||0);
+  if(!(imgW>0 && imgH>0)) return;
+  bgCropMinScale=Math.max(bgCropStageW/imgW,bgCropStageH/imgH);
+  bgCropScale=bgCropMinScale;
+  bgCropOffsetX=(bgCropStageW-imgW*bgCropScale)/2;
+  bgCropOffsetY=(bgCropStageH-imgH*bgCropScale)/2;
+  clampBgCropOffsets();
+  if(bgCropZoomEl) bgCropZoomEl.value='100';
+  renderBgCrop();
+}
+function setBgCropScaleFromZoom(value,anchorX,anchorY){
+  if(!bgCropZoomEl || !bgCropImg) return;
+  const minZoom=Math.max(1,Number(bgCropZoomEl.min||'10')||10);
+  const maxZoom=Math.max(minZoom,Number(bgCropZoomEl.max||'600')||600);
+  const z=Math.max(minZoom,Math.min(maxZoom,Number(value)||100));
+  const nextScale=bgCropMinScale*(z/100);
+  const ax=Number.isFinite(anchorX)?anchorX:(bgCropStageW/2);
+  const ay=Number.isFinite(anchorY)?anchorY:(bgCropStageH/2);
+  const ix=(ax-bgCropOffsetX)/bgCropScale;
+  const iy=(ay-bgCropOffsetY)/bgCropScale;
+  bgCropScale=nextScale;
+  bgCropOffsetX=ax-ix*bgCropScale;
+  bgCropOffsetY=ay-iy*bgCropScale;
+  clampBgCropOffsets();
+  bgCropZoomEl.value=String(Math.round(z));
+  renderBgCrop();
+}
+function closeBgCropModal(){
+  if(bgCropDragPointerId!=null){
+    try{ if(bgCropCanvasEl) bgCropCanvasEl.releasePointerCapture(bgCropDragPointerId); }catch{}
+  }
+  bgCropDragPointerId=null;
+  bgCropImg=null;
+  if(bgCropTempUrl){
+    try{ URL.revokeObjectURL(bgCropTempUrl); }catch{}
+    bgCropTempUrl='';
+  }
+  if(bgFileEl) bgFileEl.value='';
+  if(bgCropModalEl) closeModal(bgCropModalEl);
+}
+async function applyBgCrop(){
+  if(!bgCropImg) return;
+  const vw=(canvasViewportEl && canvasViewportEl.clientWidth) ? (canvasViewportEl.clientWidth|0) : 360;
+  const vh=(canvasViewportEl && canvasViewportEl.clientHeight) ? (canvasViewportEl.clientHeight|0) : 340;
+  const outW=Math.max(1,Math.round(vw*2));
+  const outH=Math.max(1,Math.round(vh*2));
+  const c=document.createElement('canvas');
+  c.width=outW;
+  c.height=outH;
+  const ctx=c.getContext('2d');
+  if(!ctx) return;
+  const scaleFactor=outW/Math.max(1,bgCropStageW||vw||1);
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,outW,outH);
+  ctx.fillStyle='#fff';
+  ctx.fillRect(0,0,outW,outH);
+  ctx.imageSmoothingEnabled=true;
+  ctx.setTransform(bgCropScale*scaleFactor,0,0,bgCropScale*scaleFactor,bgCropOffsetX*scaleFactor,bgCropOffsetY*scaleFactor);
+  ctx.drawImage(bgCropImg,0,0);
+  const blob=await new Promise(r=>c.toBlob(r,'image/png'));
+  if(!(blob instanceof Blob)) return;
+  if(customBgUrl) URL.revokeObjectURL(customBgUrl);
+  customBgUrl=URL.createObjectURL(blob);
+  applyBackground();
+  renderCurrent();
+  closeBgCropModal();
+}
+async function openBgCropFromFile(file){
+  if(!file) return;
+  closeBgCropModal();
+  bgCropTempUrl=URL.createObjectURL(file);
+  const img=new Image();
+  img.decoding='async';
+  img.src=bgCropTempUrl;
+  try{ await img.decode(); }catch{
+    closeBgCropModal();
+    return;
+  }
+  bgCropImg=img;
+  syncBgCropStageAspect();
+  if(bgCropModalEl) openModal(bgCropModalEl);
+  window.requestAnimationFrame(()=>{
+    resizeBgCropCanvas();
+    initBgCropView();
+  });
+}
+if(bgCropModalEl){
+  makeModalDraggable(bgCropModalEl);
+  bgCropModalEl.addEventListener('mousedown',(e)=>{
+    if(e.target===bgCropModalEl) closeBgCropModal();
+  });
+}
+if(bgCropCloseEl) bgCropCloseEl.addEventListener('click',closeBgCropModal);
+if(bgCropCancelEl) bgCropCancelEl.addEventListener('click',closeBgCropModal);
+if(bgCropResetEl) bgCropResetEl.addEventListener('click',initBgCropView);
+if(bgCropApplyEl) bgCropApplyEl.addEventListener('click',()=>{ void applyBgCrop(); });
+if(bgCropZoomEl) bgCropZoomEl.addEventListener('input',()=>{
+  setBgCropScaleFromZoom(bgCropZoomEl.value);
+});
+if(bgCropCanvasEl){
+  bgCropCanvasEl.addEventListener('pointerdown',(e)=>{
+    if(e.pointerType==='mouse' && e.button!==0) return;
+    if(!bgCropImg) return;
+    bgCropDragPointerId=e.pointerId;
+    bgCropDragStartX=e.clientX;
+    bgCropDragStartY=e.clientY;
+    bgCropDragStartOffX=bgCropOffsetX;
+    bgCropDragStartOffY=bgCropOffsetY;
+    try{ bgCropCanvasEl.setPointerCapture(e.pointerId); }catch{}
+    e.preventDefault();
+  });
+  bgCropCanvasEl.addEventListener('pointermove',(e)=>{
+    if(bgCropDragPointerId==null || e.pointerId!==bgCropDragPointerId) return;
+    bgCropOffsetX=bgCropDragStartOffX+(e.clientX-bgCropDragStartX);
+    bgCropOffsetY=bgCropDragStartOffY+(e.clientY-bgCropDragStartY);
+    clampBgCropOffsets();
+    renderBgCrop();
+    e.preventDefault();
+  });
+  bgCropCanvasEl.addEventListener('pointerup',(e)=>{
+    if(bgCropDragPointerId==null || e.pointerId!==bgCropDragPointerId) return;
+    try{ bgCropCanvasEl.releasePointerCapture(e.pointerId); }catch{}
+    bgCropDragPointerId=null;
+  });
+  bgCropCanvasEl.addEventListener('pointercancel',(e)=>{
+    if(bgCropDragPointerId==null || e.pointerId!==bgCropDragPointerId) return;
+    try{ bgCropCanvasEl.releasePointerCapture(e.pointerId); }catch{}
+    bgCropDragPointerId=null;
+  });
+  bgCropCanvasEl.addEventListener('wheel',(e)=>{
+    if(!bgCropZoomEl) return;
+    if(!bgCropImg) return;
+    const delta=(e.deltaY||0);
+    if(!delta) return;
+    const next=Number(bgCropZoomEl.value||'100')+(delta>0?-6:6);
+    const rect=bgCropCanvasEl.getBoundingClientRect();
+    const ax=(e.clientX-rect.left);
+    const ay=(e.clientY-rect.top);
+    setBgCropScaleFromZoom(next,ax,ay);
+    e.preventDefault();
+  },{ passive:false });
+}
+window.addEventListener('resize',()=>{
+  if(!bgCropModalEl || !bgCropModalEl.classList.contains('is-open')) return;
+  syncBgCropStageAspect();
+  window.requestAnimationFrame(()=>{
+    resizeBgCropCanvas();
+    clampBgCropOffsets();
+    renderBgCrop();
+  });
+});
+window.addEventListener('keydown',(e)=>{
+  if(e.key==='Escape' && bgCropModalEl && bgCropModalEl.classList.contains('is-open')) closeBgCropModal();
+});
 importBgBtn.addEventListener('click',()=>{
   bgFileEl.value='';
   bgFileEl.click();
 });
-bgFileEl.addEventListener('change',()=>{
+bgFileEl.addEventListener('change',async ()=>{
   const file=bgFileEl.files && bgFileEl.files[0];
   if(!file) return;
-  if(customBgUrl) URL.revokeObjectURL(customBgUrl);
-  customBgUrl=URL.createObjectURL(file);
-  applyBackground();
-  renderCurrent();
+  await openBgCropFromFile(file);
 });
 if(clearBgBtn){
   clearBgBtn.addEventListener('click',()=>{

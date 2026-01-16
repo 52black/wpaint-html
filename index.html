@@ -331,6 +331,24 @@
     </div>
   </div>
 </div>
+<div id="bgCropModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="裁剪背景">
+  <div class="modal-card">
+    <div class="modal-head">
+      <strong>裁剪背景</strong>
+      <button id="bgCropClose" type="button" class="action-btn">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div id="bgCropStage" class="bg-crop-stage"><canvas id="bgCropCanvas"></canvas></div>
+      <div class="bg-crop-controls">
+        <span class="label">缩放</span>
+        <input id="bgCropZoom" type="range" min="10" max="600" step="1" value="100">
+        <button id="bgCropReset" type="button" class="action-btn">重置</button>
+        <button id="bgCropCancel" type="button" class="action-btn">取消</button>
+        <button id="bgCropApply" type="button" class="action-btn">应用</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="settingsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="设置">
   <div class="modal-card">
     <div class="modal-head">
