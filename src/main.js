@@ -1115,7 +1115,7 @@ function renderPreview(){
     if(!selectScratchFrame || selectScratchFrame.length!==need) selectScratchFrame=new Uint8Array(need);
     selectScratchFrame.set(base);
     if(selectionOriginRect) clearRectInFrame(selectScratchFrame,selectionOriginRect);
-    blitBufferFrameAt(selectScratchFrame,selectionRect,selectionBuffer,3,{ transparentZero });
+    blitBufferFrameAtAngle(selectScratchFrame,selectionRect,selectionBuffer,3,Number(selectionAngle)||0,{ transparentZero });
     frame=buildCompositeScratchFrame(3,selectScratchFrame) ?? selectScratchFrame;
   }else{
     rebuildCurrentCompositeIfNeeded();
@@ -1172,6 +1172,65 @@ function blitBufferFrameAt(dstFrame,rect,buffer,fi,options){
     }
   }
 }
+function blitBufferFrameAtAngle(dstFrame,rect,buffer,fi,angle,options){
+  const a=Number(angle)||0;
+  if(!a){
+    blitBufferFrameAt(dstFrame,rect,buffer,fi,options);
+    return;
+  }
+  if(!dstFrame || !rect || !buffer) return;
+  const transparentZero=Boolean(options && options.transparentZero);
+  const w=buffer.w|0, h=buffer.h|0;
+  const src=(buffer.frames && (buffer.frames[fi] ?? buffer.frames[0])) ? (buffer.frames[fi] ?? buffer.frames[0]) : null;
+  if(!src) return;
+  const cos=Math.cos(a);
+  const sin=Math.sin(a);
+  const cx=rect.x+w/2;
+  const cy=rect.y+h/2;
+  const halfW=w/2;
+  const halfH=h/2;
+  const corners=[
+    [-halfW,-halfH],
+    [halfW,-halfH],
+    [halfW,halfH],
+    [-halfW,halfH],
+  ];
+  let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+  for(const c of corners){
+    const x=cx+(c[0]*cos - c[1]*sin);
+    const y=cy+(c[0]*sin + c[1]*cos);
+    if(x<minX) minX=x;
+    if(x>maxX) maxX=x;
+    if(y<minY) minY=y;
+    if(y>maxY) maxY=y;
+  }
+  let x0=Math.ceil(minX-0.5);
+  let x1=Math.floor(maxX-0.5);
+  let y0=Math.ceil(minY-0.5);
+  let y1=Math.floor(maxY-0.5);
+  x0=clamp(x0|0,0,Math.max(0,(W-1)|0));
+  x1=clamp(x1|0,0,Math.max(0,(W-1)|0));
+  y0=clamp(y0|0,0,Math.max(0,(H-1)|0));
+  y1=clamp(y1|0,0,Math.max(0,(H-1)|0));
+  if(x0>x1 || y0>y1) return;
+  for(let dy=y0;dy<=y1;dy++){
+    const centerY=dy+0.5;
+    const row=dy*W;
+    for(let dx=x0;dx<=x1;dx++){
+      const centerX=dx+0.5;
+      const ddx=centerX-cx;
+      const ddy=centerY-cy;
+      const lx=ddx*cos + ddy*sin;
+      const ly=-ddx*sin + ddy*cos;
+      if(lx<-halfW || lx>=halfW || ly<-halfH || ly>=halfH) continue;
+      const sx=Math.floor(lx+halfW);
+      const sy=Math.floor(ly+halfH);
+      const v=src[sy*w+sx];
+      if(transparentZero && v===0) continue;
+      dstFrame[row+dx]=v;
+    }
+  }
+}
 function renderCurrent(options){
   const rect=(options && options.rect) ? options.rect : null;
   const skipPreview=Boolean(options && options.skipPreview);
@@ -1185,7 +1244,7 @@ function renderCurrent(options){
       if(!selectScratchFrame || selectScratchFrame.length!==need) selectScratchFrame=new Uint8Array(need);
       selectScratchFrame.set(base);
       if(selectionOriginRect) clearRectInFrame(selectScratchFrame,selectionOriginRect);
-      blitBufferFrameAt(selectScratchFrame,selectionRect,selectionBuffer,displayFrame,{ transparentZero });
+      blitBufferFrameAtAngle(selectScratchFrame,selectionRect,selectionBuffer,displayFrame,Number(selectionAngle)||0,{ transparentZero });
       const composite=buildCompositeScratchFrame(displayFrame,selectScratchFrame) ?? selectScratchFrame;
       render(composite);
     }else{
@@ -1353,6 +1412,7 @@ let selectionClipboard=null;
 let selectionDrag=null;
 let selectLastPos=null;
 let selectHistoryController=null;
+let selectionAngle=0;
 
 function isSelectMode(){
   return Boolean(containerEl && containerEl.classList.contains('select-mode'));
@@ -1399,6 +1459,7 @@ function createSelectHistoryController(){
       frames: withFrames ? cloneFramesLocal() : null,
       selectionRect: cloneRect(selectionRect),
       selectionOriginRect: cloneRect(selectionOriginRect),
+      selectionAngle: Number(selectionAngle)||0,
       selectionBaseFrames: selectionBaseFrames ? selectionBaseFrames.map(f=>new Uint8Array(f)) : null,
       selectionSourceBuffer: cloneSelectionBuffer(selectionSourceBuffer),
       selectionBuffer: cloneSelectionBuffer(selectionBuffer),
@@ -1408,6 +1469,7 @@ function createSelectHistoryController(){
     if(snap && snap.frames) applyFramesLocal(snap.frames);
     selectionRect=cloneRect(snap ? snap.selectionRect : null);
     selectionOriginRect=cloneRect(snap ? snap.selectionOriginRect : null);
+    selectionAngle=Number(snap && snap.selectionAngle)||0;
     selectionBaseFrames=snap && snap.selectionBaseFrames ? snap.selectionBaseFrames.map(f=>new Uint8Array(f)) : null;
     selectionSourceBuffer=cloneSelectionBuffer(snap ? snap.selectionSourceBuffer : null);
     selectionBuffer=cloneSelectionBuffer(snap ? snap.selectionBuffer : null);
@@ -1510,6 +1572,17 @@ function blitBufferAt(rect,buffer,options){
   }
   markCompositeDirty();
 }
+function blitBufferAtAngle(rect,buffer,angle,options){
+  const a=Number(angle)||0;
+  if(!a){
+    blitBufferAt(rect,buffer,options);
+    return;
+  }
+  for(let fi=0;fi<4;fi++){
+    blitBufferFrameAtAngle(frames[fi],rect,buffer,fi,a,options);
+  }
+  markCompositeDirty();
+}
 function scaleBufferNearest(buffer,nw,nh){
   const srcW=buffer.w|0, srcH=buffer.h|0;
   const w=Math.max(1,nw|0);
@@ -1542,19 +1615,30 @@ function syncSelectionOverlay(){
   selectRectEl.style.top=`${r.y}px`;
   selectRectEl.style.width=`${r.w}px`;
   selectRectEl.style.height=`${r.h}px`;
-  const x0=r.x, y0=r.y, x1=r.x+r.w, y1=r.y+r.h;
+  const a=Number(selectionAngle)||0;
+  selectRectEl.style.transform=a ? `rotate(${a}rad)` : '';
+  const cx=r.x+r.w/2;
+  const cy=r.y+r.h/2;
+  const halfW=r.w/2;
+  const halfH=r.h/2;
+  const rotOffset=18;
+  const cos=Math.cos(a);
+  const sin=Math.sin(a);
   const pts={
-    nw:[x0,y0], n:[(x0+x1)/2,y0], ne:[x1,y0],
-    e:[x1,(y0+y1)/2], se:[x1,y1], s:[(x0+x1)/2,y1],
-    sw:[x0,y1], w:[x0,(y0+y1)/2],
+    nw:[-halfW,-halfH], n:[0,-halfH], ne:[halfW,-halfH],
+    e:[halfW,0], se:[halfW,halfH], s:[0,halfH],
+    sw:[-halfW,halfH], w:[-halfW,0],
+    rot:[0,-halfH-rotOffset],
   };
   for(const el of selectHandleEls){
     const h=el.getAttribute('data-h')||'';
     const p=pts[h];
     if(!p){ el.style.display='none'; continue; }
     el.style.display='block';
-    el.style.left=`${p[0]}px`;
-    el.style.top=`${p[1]}px`;
+    const x=cx+(p[0]*cos - p[1]*sin);
+    const y=cy+(p[0]*sin + p[1]*cos);
+    el.style.left=`${x}px`;
+    el.style.top=`${y}px`;
   }
 }
 function syncSelectUI(){
@@ -1571,6 +1655,7 @@ function resetSelectionState(){
   selectionSourceBuffer=null;
   selectionBuffer=null;
   selectionDrag=null;
+  selectionAngle=0;
   syncSelectionOverlay();
   syncSelectUI();
 }
@@ -1581,7 +1666,7 @@ function commitSelectionToFrames(historyPush){
   else if(typeof historyPush==='function') historyPush();
   applyFramesLocal(selectionBaseFrames);
   if(selectionOriginRect) clearRectInSnapshot(frames,selectionOriginRect);
-  blitBufferAt(selectionRect,selectionBuffer,{ transparentZero });
+  blitBufferAtAngle(selectionRect,selectionBuffer,Number(selectionAngle)||0,{ transparentZero });
   return true;
 }
 function clearSelection(options){
@@ -1991,11 +2076,29 @@ function pointInRect(p,r){
   if(!r) return false;
   return p.x>=r.x && p.y>=r.y && p.x<(r.x+r.w) && p.y<(r.y+r.h);
 }
+function pointInSelection(p){
+  if(!selectionRect) return false;
+  const a=Number(selectionAngle)||0;
+  if(!a) return pointInRect(p,selectionRect);
+  const r=selectionRect;
+  const cx=r.x+r.w/2;
+  const cy=r.y+r.h/2;
+  const halfW=r.w/2;
+  const halfH=r.h/2;
+  const dx=(p.x+0.5)-cx;
+  const dy=(p.y+0.5)-cy;
+  const cos=Math.cos(a);
+  const sin=Math.sin(a);
+  const lx=dx*cos + dy*sin;
+  const ly=-dx*sin + dy*cos;
+  return lx>=-halfW && lx<halfW && ly>=-halfH && ly<halfH;
+}
 function startSelectionDrag(e,kind,options){
   const pointerId=e.pointerId;
   const start=getPos(e);
   const startRect=selectionRect ? { x:selectionRect.x|0, y:selectionRect.y|0, w:selectionRect.w|0, h:selectionRect.h|0 } : null;
-  selectionDrag={ active:true, kind, pointerId, start, startRect, ...options };
+  const startAngle=Number(selectionAngle)||0;
+  selectionDrag={ active:true, kind, pointerId, start, startRect, startAngle, ...options };
   if(selectOverlayEl) selectOverlayEl.setPointerCapture(pointerId);
   e.preventDefault();
 }
@@ -2009,12 +2112,20 @@ function onSelectPointerDown(e){
   if(handleEl && selectionHas()){
     if(selectHistoryController) selectHistoryController.push(false);
     const handle=handleEl.getAttribute('data-h')||'';
+    if(handle==='rot'){
+      const r=selectionRect;
+      const cx=r.x+r.w/2;
+      const cy=r.y+r.h/2;
+      const startPointerAngle=Math.atan2((p.y+0.5)-cy,(p.x+0.5)-cx);
+      startSelectionDrag(e,'rotate',{ startPointerAngle });
+      return;
+    }
     const keepRatio=Boolean(selectKeepRatioEl && selectKeepRatioEl.checked) && handle.length===2;
     const ratio=(selectionRect && selectionRect.h>0) ? (selectionRect.w/selectionRect.h) : 1;
     startSelectionDrag(e,'resize',{ handle, keepRatio, ratio });
     return;
   }
-  if(selectionHas() && pointInRect(p,selectionRect)){
+  if(selectionHas() && pointInSelection(p)){
     if(selectHistoryController) selectHistoryController.push(false);
     startSelectionDrag(e,'move',{});
     return;
@@ -2027,6 +2138,7 @@ function onSelectPointerDown(e){
   selectionBaseFrames=null;
   selectionSourceBuffer=null;
   selectionBuffer=null;
+  selectionAngle=0;
   syncSelectionOverlay();
   syncSelectUI();
   if(selectHistoryController) selectHistoryController.push(false);
@@ -2060,9 +2172,86 @@ function onSelectPointerMove(e){
     syncSelectionOverlay();
     return;
   }
+  if(kind==='rotate'){
+    const sr=selectionDrag.startRect;
+    const cx=sr.x+sr.w/2;
+    const cy=sr.y+sr.h/2;
+    const cur=Math.atan2((p.y+0.5)-cy,(p.x+0.5)-cx);
+    const base=Number(selectionDrag.startAngle)||0;
+    const start=Number(selectionDrag.startPointerAngle)||0;
+    let next=base+(cur-start);
+    if(!Number.isFinite(next)) next=0;
+    const twoPi=Math.PI*2;
+    next=((next+Math.PI)%twoPi+twoPi)%twoPi-Math.PI;
+    selectionAngle=next;
+    renderCurrent();
+    syncSelectionOverlay();
+    return;
+  }
   if(kind==='resize'){
     const h=String(selectionDrag.handle||'');
     const sr=selectionDrag.startRect;
+    const a=Number(selectionDrag.startAngle)||0;
+    if(a && h){
+      const cx=sr.x+sr.w/2;
+      const cy=sr.y+sr.h/2;
+      const cos=Math.cos(a);
+      const sin=Math.sin(a);
+      const halfW=sr.w/2;
+      const halfH=sr.h/2;
+      let left=-halfW, right=halfW, top=-halfH, bottom=halfH;
+      const worldX=p.x+(h.includes('e')?1:(h.includes('w')?0:0.5));
+      const worldY=p.y+(h.includes('s')?1:(h.includes('n')?0:0.5));
+      const dx=worldX-cx;
+      const dy=worldY-cy;
+      const lx=dx*cos + dy*sin;
+      const ly=-dx*sin + dy*cos;
+      if(h.includes('w')) left=lx;
+      if(h.includes('e')) right=lx;
+      if(h.includes('n')) top=ly;
+      if(h.includes('s')) bottom=ly;
+      if(h==='n' || h==='s'){ left=-halfW; right=halfW; }
+      if(h==='e' || h==='w'){ top=-halfH; bottom=halfH; }
+      if(selectionDrag.keepRatio && h.length===2){
+        const ratio=Math.max(1e-6,Number(selectionDrag.ratio)||1);
+        const fixedX=h.includes('w') ? right : left;
+        const fixedY=h.includes('n') ? bottom : top;
+        let newW=Math.max(1,Math.abs(right-left));
+        let newH=Math.max(1,Math.abs(bottom-top));
+        const dxm=Math.abs(lx-fixedX);
+        const dym=Math.abs(ly-fixedY);
+        if(dxm>=dym*ratio){
+          newH=Math.max(1,Math.round(newW/ratio));
+          newW=Math.max(1,Math.round(newW));
+        }else{
+          newW=Math.max(1,Math.round(newH*ratio));
+          newH=Math.max(1,Math.round(newH));
+        }
+        if(h.includes('w')){ right=fixedX; left=fixedX-newW; }else{ left=fixedX; right=fixedX+newW; }
+        if(h.includes('n')){ bottom=fixedY; top=fixedY-newH; }else{ top=fixedY; bottom=fixedY+newH; }
+      }
+      if(left>right){ const t=left; left=right; right=t; }
+      if(top>bottom){ const t=top; top=bottom; bottom=t; }
+      const newW=Math.max(1,Math.round(right-left));
+      const newH=Math.max(1,Math.round(bottom-top));
+      const localCx=(left+right)/2;
+      const localCy=(top+bottom)/2;
+      const shiftX=localCx*cos - localCy*sin;
+      const shiftY=localCx*sin + localCy*cos;
+      let nx=Math.round((cx+shiftX)-(newW/2));
+      let ny=Math.round((cy+shiftY)-(newH/2));
+      nx=clamp(nx|0,0,Math.max(0,(W-newW)|0));
+      ny=clamp(ny|0,0,Math.max(0,(H-newH)|0));
+      const rect={ x:nx, y:ny, w:newW|0, h:newH|0 };
+      selectionRect=rect;
+      if(selectionSourceBuffer){
+        selectionBuffer=scaleBufferNearest(selectionSourceBuffer,rect.w,rect.h);
+      }
+      renderCurrent();
+      syncSelectionOverlay();
+      syncSelectUI();
+      return;
+    }
     const ax=sr.x+sr.w-1;
     const ay=sr.y+sr.h-1;
     let x0=sr.x, y0=sr.y, x1=ax, y1=ay;
@@ -2118,6 +2307,7 @@ function onSelectPointerUp(e){
   if(kind==='marquee'){
     if(moved && selectionRect){
       selectionOriginRect={ x:selectionRect.x|0, y:selectionRect.y|0, w:selectionRect.w|0, h:selectionRect.h|0 };
+      selectionAngle=0;
       selectionBaseFrames=cloneFramesLocal();
       selectionSourceBuffer=captureSelectionBufferFrom(selectionBaseFrames,selectionOriginRect);
       selectionBuffer=selectionSourceBuffer;
@@ -2128,6 +2318,7 @@ function onSelectPointerUp(e){
       selectionBaseFrames=null;
       selectionSourceBuffer=null;
       selectionBuffer=null;
+      selectionAngle=0;
     }
   }
   syncSelectionOverlay();
@@ -2148,7 +2339,9 @@ if(selectExitEl) selectExitEl.addEventListener('click',()=>{ closeSelectMode(); 
 if(selectClearEl) selectClearEl.addEventListener('click',()=>{ clearSelection({ commit:true }); playSound('wipe1') || playSound('click'); });
 if(selectCopyEl) selectCopyEl.addEventListener('click',()=>{
   if(!selectionHas()) return;
-  selectionClipboard=cloneSelectionBuffer(selectionBuffer);
+  const buf=cloneSelectionBuffer(selectionBuffer);
+  if(!buf) return;
+  selectionClipboard={ ...buf, angle: Number(selectionAngle)||0 };
   playSound('snap') || playSound('click');
   syncSelectUI();
 });
@@ -2157,7 +2350,9 @@ if(selectCutEl) selectCutEl.addEventListener('click',()=>{
   playSound('snap') || playSound('click');
   if(selectHistoryController) selectHistoryController.push(true);
   else pushHistory();
-  selectionClipboard=cloneSelectionBuffer(selectionBuffer);
+  const buf=cloneSelectionBuffer(selectionBuffer);
+  if(!buf) return;
+  selectionClipboard={ ...buf, angle: Number(selectionAngle)||0 };
   if(selectionBaseFrames){
     applyFramesLocal(selectionBaseFrames);
     if(selectionOriginRect) clearRectInSnapshot(frames,selectionOriginRect);
@@ -2180,6 +2375,7 @@ if(selectPasteEl) selectPasteEl.addEventListener('click',()=>{
   }
   const w=selectionClipboard.w|0;
   const h=selectionClipboard.h|0;
+  selectionAngle=Number(selectionClipboard.angle)||0;
   const anchor=selectLastPos ? { x: selectLastPos.x|0, y: selectLastPos.y|0 } : { x: ((W/2)|0), y: ((H/2)|0) };
   const x=clamp((anchor.x-Math.floor(w/2))|0,0,Math.max(0,(W-w)|0));
   const y=clamp((anchor.y-Math.floor(h/2))|0,0,Math.max(0,(H-h)|0));

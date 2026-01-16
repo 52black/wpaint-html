@@ -172,9 +172,10 @@ body[data-ui-theme="cute"] .file-menu .tool-btn + .tool-btn::before { background
 .select-overlay { position: absolute; inset: 0; z-index: 7; display: none; pointer-events: none; }
 .container.select-mode .select-overlay { display: block; pointer-events: auto; }
 .select-overlay-content { position: absolute; top: 0; left: 0; transform-origin: top left; }
-.select-rect { position: absolute; border: 2px dashed rgba(17,17,17,.92); box-sizing: border-box; background: rgba(255,255,255,.02); border-radius: 6px; }
+.select-rect { position: absolute; border: 2px dashed rgba(17,17,17,.92); box-sizing: border-box; background: rgba(255,255,255,.02); border-radius: 6px; transform-origin: 50% 50%; }
 .select-handle { position: absolute; width: 9px; height: 9px; border-radius: 5px; background: rgba(255,255,255,.95); border: 1px solid rgba(0,0,0,.55); box-shadow: 0 2px 8px rgba(0,0,0,.18); transform: translate(-50%,-50%); touch-action: none; cursor: grab; }
 .select-handle:active { cursor: grabbing; }
+.select-handle[data-h="rot"] { width: 11px; height: 11px; border-radius: 6px; cursor: grab; }
 .canvas, .checkerboard, .canvas-bg { transform-origin: top left; }
 .action-btn:disabled { opacity: .6; cursor: not-allowed; }
 .modal-overlay { position: absolute; inset: 0; z-index: 1000; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.35); padding: 16px; box-sizing: border-box; }
