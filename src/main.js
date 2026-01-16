@@ -524,15 +524,42 @@ const historyController=createHistoryController({
   bindHotkeys: false,
   onUndo: ()=>{ playSound('cancel') || playSound('click'); },
   onRedo: ()=>{ playSound('snap') || playSound('click'); },
-  captureSnapshot: ()=>{
+  captureSnapshot: (kindHint)=>{
+    if(kindHint==='project') return captureProjectSnapshot();
     const idx=timelineIndex|0;
     const cel=(Array.isArray(timeline) && timeline[idx]) ? timeline[idx] : null;
-    if(!cel) return { timelineIndex: idx, activeLayerIndex: activeLayerIndex|0, cel: null };
+    if(!cel) return { kind: 'cel', w: W|0, h: H|0, timelineIndex: idx, activeLayerIndex: activeLayerIndex|0, cel: null };
     ensureCelModel(cel);
-    return { timelineIndex: idx, activeLayerIndex: activeLayerIndex|0, cel: cloneCelDeep(cel) };
+    return { kind: 'cel', w: W|0, h: H|0, timelineIndex: idx, activeLayerIndex: activeLayerIndex|0, cel: cloneCelDeep(cel) };
   },
   applySnapshot: (snapshot)=>{
-    if(!snapshot || !Array.isArray(timeline) || timeline.length===0) return;
+    if(!snapshot) return;
+    if(snapshot.kind==='project'){
+      if(stopAnim) stopAnim();
+      if(stopTimelinePlayback) stopTimelinePlayback();
+      timelinePlaying=false;
+      bumpTimelineToken();
+      const nextW=Number(snapshot.w);
+      const nextH=Number(snapshot.h);
+      if(Number.isFinite(nextW) && Number.isFinite(nextH) && nextW>0 && nextH>0) setCanvasSize(nextW|0,nextH|0);
+      if(Array.isArray(snapshot.timeline) && snapshot.timeline.length>0) timeline=snapshot.timeline;
+      const len=Array.isArray(timeline) ? timeline.length : 0;
+      const idx=clamp(Number(snapshot.timelineIndex)||0,0,Math.max(0,len-1));
+      timelineIndex=idx;
+      timelineSelected=new Set([idx]);
+      timelineAnchor=idx;
+      activeLayerIndex=Number(snapshot.activeLayerIndex)||0;
+      applyTimelineFrame(idx);
+      syncAnimUI();
+      syncLayerUI();
+      fitCanvasToViewport();
+      applyPlaybackMode();
+      return;
+    }
+    const nextW=Number(snapshot.w);
+    const nextH=Number(snapshot.h);
+    if(Number.isFinite(nextW) && Number.isFinite(nextH) && nextW>0 && nextH>0 && ((nextW|0)!==(W|0) || (nextH|0)!==(H|0))) setCanvasSize(nextW|0,nextH|0);
+    if(!Array.isArray(timeline) || timeline.length===0) return;
     const idx=clamp(Number(snapshot.timelineIndex)||0,0,Math.max(0,timeline.length-1));
     const nextCel=snapshot.cel;
     if(nextCel) timeline[idx]=nextCel;
@@ -2327,7 +2354,7 @@ function clearCanvas(){
   ensureCelModel(cel);
   const hasMultipleLayers=Boolean(cel && Array.isArray(cel.layers) && cel.layers.length>1);
   if(clearAllLayersWrapEl) clearAllLayersWrapEl.style.display=hasMultipleLayers ? '' : 'none';
-  if(hasMultipleLayers && clearAllLayersEl) clearAllLayersEl.checked=true;
+  if(hasMultipleLayers && clearAllLayersEl) clearAllLayersEl.checked=false;
   syncResizeModalUI();
   openModal(resizeModalEl);
   try{
@@ -2381,7 +2408,6 @@ function clearAndResizeProject(newW,newH){
   timelineSelected=new Set([timelineIndex]);
   timelineAnchor=timelineIndex;
   applyTimelineFrame(timelineIndex);
-  if(resetHistory) resetHistory();
   closeCrop();
   if(applyBackground) applyBackground();
   fitCanvasToViewport();
@@ -2404,6 +2430,17 @@ function clearActiveLayer(){
   markCompositeDirty();
   renderCurrent();
 }
+function captureProjectSnapshot(){
+  const t=Array.isArray(timeline) ? timeline : [];
+  return {
+    kind: 'project',
+    w: W|0,
+    h: H|0,
+    timelineIndex: timelineIndex|0,
+    activeLayerIndex: activeLayerIndex|0,
+    timeline: t.map(c=>c ? cloneCelDeep(c) : c),
+  };
+}
 function applyResizeModal(){
   playSound('scratch') || playSound('click');
   if(!getClearAllLayersMode()){
@@ -2413,6 +2450,7 @@ function applyResizeModal(){
   }
   const w=parseResizeValue(resizeWEl ? resizeWEl.value : null,W,1000);
   const h=parseResizeValue(resizeHEl ? resizeHEl.value : null,H,750);
+  if(historyController && typeof historyController.pushSnapshot==='function') historyController.pushSnapshot(captureProjectSnapshot());
   clearAndResizeProject(w,h);
   closeResizeModal();
 }
@@ -2850,34 +2888,67 @@ function syncSchemeListActive(){
     el.classList.toggle('is-active',id && id===String(activeSchemeId||''));
   }
 }
-function makeSchemeItem(scheme){
+function activateScheme(scheme){
+  if(!scheme) return;
+  activeSchemeId=scheme.id;
+  applyPaletteScheme(scheme.colors);
+  if(scheme.separateOutline!=null && separateOutlineEl){
+    separateOutlineEl.checked=Boolean(scheme.separateOutline);
+    syncOutlineColorsUI();
+  }
+  if(Array.isArray(scheme.outlineColors)) setOutlineColors5(scheme.outlineColors);
+  syncOutlineColorMap();
+  applyBackground();
+  syncPaletteButtonsColors();
+  renderCurrent();
+  schemeBaseline=captureBaseline();
+  syncSchemeListActive();
+}
+function makeSchemeItem(scheme,options){
+  const isCustom=Boolean(options && options.isCustom);
+  const row=document.createElement('div');
+  row.className='scheme-row';
   const btn=document.createElement('button');
   btn.type='button';
   btn.className='action-btn scheme-item';
   btn.setAttribute('data-scheme-id',scheme.id);
   btn.textContent=scheme.name;
   btn.addEventListener('click',()=>{
-    activeSchemeId=scheme.id;
-    applyPaletteScheme(scheme.colors);
-    if(scheme.separateOutline!=null && separateOutlineEl){
-      separateOutlineEl.checked=Boolean(scheme.separateOutline);
-      syncOutlineColorsUI();
-    }
-    if(Array.isArray(scheme.outlineColors)) setOutlineColors5(scheme.outlineColors);
-    syncOutlineColorMap();
-    applyBackground();
-    syncPaletteButtonsColors();
-    renderCurrent();
-    schemeBaseline=captureBaseline();
-    syncSchemeListActive();
+    activateScheme(scheme);
   });
-  return btn;
+  row.appendChild(btn);
+  if(isCustom){
+    const del=document.createElement('button');
+    del.type='button';
+    del.className='action-btn scheme-delete-btn';
+    del.setAttribute('aria-label','删除');
+    del.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>';
+    del.addEventListener('click',(e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      const ok=window.confirm(`删除配色方案“${scheme.name}”？`);
+      if(!ok) return;
+      const idx=paletteSchemes.findIndex(s=>s && s.id===scheme.id);
+      if(idx>=0) paletteSchemes.splice(idx,1);
+      customPaletteSchemes=customPaletteSchemes.filter(s=>s && s.id!==scheme.id);
+      saveCustomPaletteSchemes(customPaletteSchemes);
+      if(String(activeSchemeId||'')===String(scheme.id)){
+        const fallback=paletteSchemes.find(s=>s && s.id==='enos16') || paletteSchemes[0] || null;
+        if(fallback) activateScheme(fallback);
+        else activeSchemeId='';
+      }
+      rebuildSchemeList();
+    });
+    row.appendChild(del);
+  }
+  return row;
 }
 function rebuildSchemeList(){
   if(!schemeListEl) return;
   schemeListEl.innerHTML='';
+  const customIds=new Set(customPaletteSchemes.map(s=>s.id));
   for(const scheme of paletteSchemes){
-    schemeListEl.appendChild(makeSchemeItem(scheme));
+    schemeListEl.appendChild(makeSchemeItem(scheme,{ isCustom: customIds.has(scheme.id) }));
   }
   syncSchemeListActive();
 }

@@ -23,8 +23,8 @@ export function createHistoryController({
     }
   }
 
-  function capture(){
-    if(typeof captureSnapshot==='function') return captureSnapshot();
+  function capture(kindHint){
+    if(typeof captureSnapshot==='function') return captureSnapshot(kindHint);
     return cloneFrames();
   }
 
@@ -45,11 +45,20 @@ export function createHistoryController({
     syncUI();
   }
 
+  function pushSnapshot(snapshot){
+    undoStack.push(snapshot!=null ? snapshot : capture());
+    if(undoStack.length>maxHistory) undoStack.shift();
+    redoStack.length=0;
+    syncUI();
+  }
+
   function undo(){
     if(undoStack.length===0) return;
-    redoStack.push(capture());
-    const prev=undoStack.pop();
-    apply(prev);
+    const prevSnap=undoStack[undoStack.length-1];
+    const hint=prevSnap && typeof prevSnap==='object' ? prevSnap.kind : undefined;
+    redoStack.push(capture(hint));
+    const applySnap=undoStack.pop();
+    apply(applySnap);
     if(typeof onUndo==='function') onUndo();
     syncUI();
     renderCurrent();
@@ -57,9 +66,11 @@ export function createHistoryController({
 
   function redo(){
     if(redoStack.length===0) return;
-    undoStack.push(capture());
-    const next=redoStack.pop();
-    apply(next);
+    const next=redoStack[redoStack.length-1];
+    const hint=next && typeof next==='object' ? next.kind : undefined;
+    undoStack.push(capture(hint));
+    const nextSnap=redoStack.pop();
+    apply(nextSnap);
     if(typeof onRedo==='function') onRedo();
     syncUI();
     renderCurrent();
@@ -96,5 +107,5 @@ export function createHistoryController({
   bind();
   syncUI();
 
-  return { pushHistory, undo, redo, reset, syncUI };
+  return { pushHistory, pushSnapshot, undo, redo, reset, syncUI };
 }

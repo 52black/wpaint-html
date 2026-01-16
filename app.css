@@ -243,7 +243,7 @@ body[data-ui-theme="cute"] .file-menu .tool-btn + .tool-btn::before { background
 .jitter-panel .range { gap: 6px; padding: 4px 8px; }
 .jitter-panel .range input[type="range"] { width: 120px; }
 .jitter-panel .pill { min-width: 20px; padding: 1px 7px; }
-.toggle { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,.10); background: rgba(255,255,255,.85); user-select: none; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(0,0,0,.10); background: rgba(255,255,255,.85); user-select: none; box-sizing: border-box; max-width: 100%; }
 .toggle input[type="checkbox"] { width: 34px; height: 18px; appearance: none; -webkit-appearance: none; border-radius: 999px; background: rgba(0,0,0,.15); position: relative; outline: none; cursor: pointer; transition: background .15s ease; }
 .toggle input[type="checkbox"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 999px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); transition: transform .15s ease; }
 .toggle input[type="checkbox"]:checked { background: rgba(17,17,17,.9); }
@@ -325,6 +325,9 @@ body[data-ui-theme="cute"] .file-menu .tool-btn + .tool-btn::before { background
 .preview-bg { width: 100%; height: 100%; display: grid; place-items: center; }
 .preview-canvas { width: 152px; height: 112px; image-rendering: pixelated; }
 .scheme-list { margin-top: 10px; display: grid; gap: 6px; max-height: 150px; overflow: auto; }
+.scheme-row { display: flex; align-items: center; gap: 6px; }
+.scheme-row .scheme-item { flex: 1; min-width: 0; }
+.scheme-delete-btn { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; box-shadow: none; }
 .container.color-mode .color-side .card { display: flex; flex-direction: column; }
 .container.color-mode .scheme-list { max-height: none; min-height: 0; overflow: auto; }
 .scheme-item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; text-align: left; }
