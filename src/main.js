@@ -7,6 +7,9 @@ import { createHistoryController } from './history.js';
 import { clamp, openModal, closeModal, makeModalDraggable } from './modal.js';
 import { createPatternController } from './patterns.js';
 import color5DeckText from '../color5.deck?raw';
+if(new URLSearchParams(location.search).has('spriteTest')){
+  void import('./spriteTest.js');
+}
 const DEFAULT_SOUNDS={
   click:"%%SND0Cu0S9vwL7xD3AAfyDPr+BvQH//sK9Af/9g7yC/3yE+4Q+vEX7RD49w/yDPn/BPkG/AAA/gE=",
   pen2:"%%SND0AAAA/wAAAAAAAAABAAD////+/wAAAAABAAD////+AAABAAAAAAD+//8AAAAAAAAA/wAAAAAA/wAA/wAAAAECAQD+/fz9/wADBQQB//v4+f0CBggGAvz39vj/BgkJBP749vj/BggIAv35+f0AAwQBAP3+AAAA/v0AAgUEAPr2+AAIDQf+8/D3Aw4RCPnu7vkIEhEE9evu/AsUEQLz6+/8DBQRA/Tr7vkIExQK+u7r8v8NFBIG9+3r8gANFRMJ++/q7/oHEhUQBPbs6vD8CBMVEQX47eru+AUPFBMK/vLr7PP+CRETDgT78u/x+QMMEA4H/fTv8PkCCw8NBf318fT7AwkKCAL8+Pj8AAMEAwD+/wACAgD8+fk=",
@@ -357,6 +360,7 @@ const outlineColorsEl=document.getElementById('outlineColors');
 const paletteToolsEl=document.getElementById('paletteTools');
 const paletteMoreToggleEl=document.getElementById('paletteMoreToggle');
 const paletteCollapseEl=document.getElementById('paletteCollapse');
+let paletteButtons=[];
 let paletteExpanded=false;
 function setPaletteExpanded(expanded){
   paletteExpanded=Boolean(expanded);
@@ -3469,23 +3473,308 @@ const shortcutsListEl=document.getElementById('shortcutsList');
 const shortcutsResetEl=document.getElementById('shortcutsReset');
 const uiThemeDefaultEl=document.getElementById('uiThemeDefault');
 const uiThemeCuteEl=document.getElementById('uiThemeCute');
+const uiThemeCatEl=document.getElementById('uiThemeCat');
 const SHORTCUTS_STORAGE_KEY='wpaint.shortcuts.v1';
 const NUMPAD_ENABLED_STORAGE_KEY='wpaint.numPadEnabled.v1';
+const CAT_SPRITE_CONFIG={
+  cols:6,
+  rows:3,
+  borderL:52,
+  borderT:34,
+  borderR:50,
+  borderB:62,
+  gapX:50,
+  gapY:72,
+  outSize:64,
+  buttonIds:[
+    'pen',
+    'pen2',
+    'blobby',
+    'stippleTiny',
+    'softLrg',
+    'eraser',
+    'undo',
+    'redo',
+    'clear',
+    'switchColor',
+    'advanced',
+    'fileMenuToggle',
+    'settingsFooterBtn',
+    'animBtn',
+    'layerBtn',
+    'cropBtn',
+    'selectBtn',
+    'zoomBtn',
+  ],
+};
+let catSpriteUrlsPromise=null;
+let catSpriteApplyToken=0;
+async function buildCatSpriteUrls(){
+  if(catSpriteUrlsPromise) return catSpriteUrlsPromise;
+  catSpriteUrlsPromise=(async ()=>{
+    const img=new Image();
+    img.decoding='async';
+    img.src=new URL('../1.png',import.meta.url).href;
+    await img.decode();
+    const imgW=img.naturalWidth||img.width||0;
+    const imgH=img.naturalHeight||img.height||0;
+    const cols=CAT_SPRITE_CONFIG.cols|0;
+    const rows=CAT_SPRITE_CONFIG.rows|0;
+    const { borderL,borderT,borderR,borderB,gapX,gapY }=CAT_SPRITE_CONFIG;
+    const tileW=Math.max(1,Math.floor((imgW-borderL-borderR-gapX*(cols-1))/cols));
+    const tileH=Math.max(1,Math.floor((imgH-borderT-borderB-gapY*(rows-1))/rows));
+    const outSize=Math.max(16,CAT_SPRITE_CONFIG.outSize|0);
+    const urls=[];
+    const canvas=document.createElement('canvas');
+    canvas.width=outSize;
+    canvas.height=outSize;
+    const ctx=canvas.getContext('2d');
+    if(!ctx) return urls;
+    ctx.imageSmoothingEnabled=true;
+    for(let i=0;i<cols*rows;i++){
+      const col=i%cols;
+      const row=(i/cols)|0;
+      const sx=Math.round(borderL+col*(tileW+gapX));
+      const sy=Math.round(borderT+row*(tileH+gapY));
+      ctx.clearRect(0,0,outSize,outSize);
+      const scale=Math.min(outSize/tileW,outSize/tileH);
+      const dw=Math.max(1,Math.round(tileW*scale));
+      const dh=Math.max(1,Math.round(tileH*scale));
+      const dx=((outSize-dw)/2)|0;
+      const dy=((outSize-dh)/2)|0;
+      ctx.drawImage(img,sx,sy,tileW,tileH,dx,dy,dw,dh);
+      urls[i]=canvas.toDataURL('image/png');
+    }
+    return urls;
+  })();
+  return catSpriteUrlsPromise;
+}
+function clearCatSpriteIcons(){
+  for(const id of CAT_SPRITE_CONFIG.buttonIds){
+    const btn=document.getElementById(id);
+    if(!btn) continue;
+    btn.classList.remove('cat-sprite-span','cat-sprite-plain');
+    btn.style.removeProperty('--cat-icon');
+  }
+}
+async function applyCatSpriteIcons(){
+  const token=++catSpriteApplyToken;
+  if(document.body.getAttribute('data-ui-theme')!=='cat'){
+    clearCatSpriteIcons();
+    return;
+  }
+  const urls=await buildCatSpriteUrls();
+  if(token!==catSpriteApplyToken) return;
+  for(let i=0;i<CAT_SPRITE_CONFIG.buttonIds.length;i++){
+    const id=CAT_SPRITE_CONFIG.buttonIds[i];
+    const btn=document.getElementById(id);
+    if(!btn) continue;
+    const url=urls[i];
+    if(!url) continue;
+    const hasSpan=Boolean(btn.querySelector('.btn-icon'));
+    btn.classList.toggle('cat-sprite-span',hasSpan);
+    btn.classList.toggle('cat-sprite-plain',!hasSpan);
+    btn.style.setProperty('--cat-icon',`url("${url}")`);
+  }
+}
 function normalizeUiTheme(raw){
-  return raw==='cute'?'cute':'';
+  return raw==='cat'?'cat':(raw==='cute'?'cute':'');
 }
 function isCuteUiTheme(){
   return document.body.getAttribute('data-ui-theme')==='cute';
 }
+function isCatUiTheme(){
+  return document.body.getAttribute('data-ui-theme')==='cat';
+}
+let catPawsSeed=0;
+function reseedCatPaws(){
+  catPawsSeed=((Date.now()|0)^(Math.random()*0x7fffffff)|0)>>>0;
+  if(catPawsSeed===0) catPawsSeed=0x9e3779b9;
+}
+function nextCatRand(){
+  let x=catPawsSeed|0;
+  x^=x<<13;
+  x^=x>>>17;
+  x^=x<<5;
+  catPawsSeed=x>>>0;
+  return (catPawsSeed>>>0)/4294967296;
+}
+function ensureCatPawsLayer(){
+  if(!containerEl) return null;
+  let layer=containerEl.querySelector('.cat-paws');
+  if(layer) return layer;
+  layer=document.createElement('div');
+  layer.className='cat-paws';
+  containerEl.appendChild(layer);
+  return layer;
+}
+function clearCatPaws(){
+  if(!containerEl) return;
+  const layer=containerEl.querySelector('.cat-paws');
+  if(layer) layer.remove();
+}
+function layoutCatPaws(){
+  if(!containerEl) return;
+  if(!isCatUiTheme()){
+    clearCatPaws();
+    return;
+  }
+  const layer=ensureCatPawsLayer();
+  if(!layer) return;
+  while(layer.firstChild) layer.removeChild(layer.firstChild);
+  const sidebarW=152;
+  const sidebarH=containerEl.clientHeight||0;
+  if(sidebarH<=0) return;
+
+  const baseSize=48;
+  const gap=14;
+  const area=sidebarW*sidebarH;
+  const target=Math.max(8,Math.min(22,Math.round(area/(60*60)*1.35)));
+  const maxAttempts=12000;
+  const placed=[];
+
+  for(let attempts=0;attempts<maxAttempts && placed.length<target;attempts++){
+    const scale=0.85+nextCatRand()*0.55;
+    const size=Math.max(28,Math.round(baseSize*scale));
+    const r=size/2;
+    const cx=(-r*0.55)+nextCatRand()*(sidebarW+r*1.1);
+    const cy=(-r*0.55)+nextCatRand()*(sidebarH+r*1.1);
+
+    let ok=true;
+    for(const p of placed){
+      const dx=cx-p.cx;
+      const dy=cy-p.cy;
+      const min=(r+p.r+gap);
+      if(dx*dx+dy*dy<min*min){ ok=false; break; }
+    }
+    if(!ok) continue;
+
+    placed.push({ cx,cy,r,size });
+  }
+
+  for(const p of placed){
+    const el=document.createElement('div');
+    el.className='cat-paw';
+    el.style.width=`${p.size}px`;
+    el.style.height=`${p.size}px`;
+    el.style.left=`${Math.round(p.cx-p.r)}px`;
+    el.style.top=`${Math.round(p.cy-p.r)}px`;
+    el.style.opacity=String(0.12+nextCatRand()*0.20);
+    el.style.transform=`rotate(${Math.round(nextCatRand()*360)}deg)`;
+    layer.appendChild(el);
+  }
+}
+let catPawsResizeTimer=0;
+function scheduleLayoutCatPaws(){
+  if(!isCatUiTheme()) return;
+  if(catPawsResizeTimer) window.clearTimeout(catPawsResizeTimer);
+  catPawsResizeTimer=window.setTimeout(()=>{ catPawsResizeTimer=0; layoutCatPaws(); },100);
+}
+const YARN_ICON_URL=new URL('../yarn.png',import.meta.url).href;
+let yarnBasePromise=null;
+let yarnIconApplyToken=0;
+const yarnTintCache=new Map();
+async function ensureYarnBase(){
+  if(yarnBasePromise) return yarnBasePromise;
+  yarnBasePromise=(async ()=>{
+    const img=new Image();
+    img.decoding='async';
+    img.src=YARN_ICON_URL;
+    await img.decode();
+    const w=img.naturalWidth||img.width||0;
+    const h=img.naturalHeight||img.height||0;
+    const c=document.createElement('canvas');
+    c.width=w;
+    c.height=h;
+    const ctx=c.getContext('2d');
+    if(!ctx) return { w:0,h:0,data:null };
+    ctx.clearRect(0,0,w,h);
+    ctx.drawImage(img,0,0);
+    const data=ctx.getImageData(0,0,w,h);
+    return { w,h,data };
+  })();
+  return yarnBasePromise;
+}
+async function tintYarnDataUrl(hex){
+  const h=String(hex||'#000000');
+  const key=h.toLowerCase();
+  const cached=yarnTintCache.get(key);
+  if(cached) return cached;
+  const [tr,tg,tb]=hexToRGB(h);
+  const base=await ensureYarnBase();
+  if(!base.data || base.w<=0 || base.h<=0) return '';
+  const w=base.w|0;
+  const hgt=base.h|0;
+  const src=base.data.data;
+  const c=document.createElement('canvas');
+  c.width=w;
+  c.height=hgt;
+  const ctx=c.getContext('2d');
+  if(!ctx) return '';
+  const out=ctx.createImageData(w,hgt);
+  const dst=out.data;
+  for(let i=0;i<src.length;i+=4){
+    const a=src[i+3];
+    if(a===0){
+      dst[i+3]=0;
+      continue;
+    }
+    const r=src[i];
+    const g=src[i+1];
+    const b=src[i+2];
+    if(r>245 && g>245 && b>245){
+      dst[i+3]=0;
+      continue;
+    }
+    const l=(0.2126*r+0.7152*g+0.0722*b)/255;
+    dst[i]=(tr*l)|0;
+    dst[i+1]=(tg*l)|0;
+    dst[i+2]=(tb*l)|0;
+    dst[i+3]=255;
+  }
+  ctx.putImageData(out,0,0);
+  const url=c.toDataURL('image/png');
+  yarnTintCache.set(key,url);
+  return url;
+}
+function syncPaletteButtonsYarnIcons(){
+  const token=++yarnIconApplyToken;
+  if(!isCatUiTheme()){
+    for(const btn of paletteButtons){
+      btn.style.removeProperty('--yarn-icon');
+    }
+    return;
+  }
+  for(const btn of paletteButtons){
+    const v=Number(btn.dataset.value);
+    const hex=colorMap[v] ?? '#000000';
+    void tintYarnDataUrl(hex).then((url)=>{
+      if(token!==yarnIconApplyToken) return;
+      if(!url) return;
+      btn.style.setProperty('--yarn-icon',`url("${url}")`);
+    });
+  }
+}
 function syncUiThemeRadios(){
-  if(uiThemeDefaultEl) uiThemeDefaultEl.checked=!isCuteUiTheme();
-  if(uiThemeCuteEl) uiThemeCuteEl.checked=isCuteUiTheme();
+  const isCute=isCuteUiTheme();
+  const isCat=isCatUiTheme();
+  if(uiThemeDefaultEl) uiThemeDefaultEl.checked=!isCute && !isCat;
+  if(uiThemeCuteEl) uiThemeCuteEl.checked=isCute;
+  if(uiThemeCatEl) uiThemeCatEl.checked=isCat;
 }
 function setUiTheme(theme){
   const next=normalizeUiTheme(theme);
   if(next) document.body.setAttribute('data-ui-theme',next);
   else document.body.removeAttribute('data-ui-theme');
   syncUiThemeRadios();
+  applyCatSpriteIcons();
+  syncPaletteButtonsYarnIcons();
+  if(next==='cat'){
+    reseedCatPaws();
+    layoutCatPaws();
+  }else{
+    clearCatPaws();
+  }
   try{
     localStorage.setItem(UI_THEME_STORAGE_KEY,next);
   }catch{}
@@ -3497,6 +3786,14 @@ function setUiTheme(theme){
   }catch{}
   if(saved) document.body.setAttribute('data-ui-theme',saved);
   syncUiThemeRadios();
+  applyCatSpriteIcons();
+  syncPaletteButtonsYarnIcons();
+  if(isCatUiTheme()){
+    reseedCatPaws();
+    layoutCatPaws();
+  }else{
+    clearCatPaws();
+  }
 }
 makeModalDraggable(settingsModalEl);
 let settingsActivePage='general';
@@ -3530,6 +3827,7 @@ async function toggleFullscreen(){
 if(fullscreenToggleEl) fullscreenToggleEl.addEventListener('click',toggleFullscreen);
 document.addEventListener('fullscreenchange',syncFullscreenUI);
 syncFullscreenUI();
+window.addEventListener('resize',scheduleLayoutCatPaws);
 if(soundEnabledEl){
   soundEnabledEl.checked=Boolean(soundEnabled);
   soundEnabledEl.addEventListener('change',()=>{
@@ -4055,6 +4353,11 @@ if(uiThemeCuteEl){
     if(uiThemeCuteEl.checked) setUiTheme('cute');
   });
 }
+if(uiThemeCatEl){
+  uiThemeCatEl.addEventListener('change',()=>{
+    if(uiThemeCatEl.checked) setUiTheme('cat');
+  });
+}
 function updateFileMenuPlacement(){
   if(!fileMenuEl || !fileMenuToggleEl) return;
   const rootRect=(containerEl?containerEl.getBoundingClientRect():null);
@@ -4227,7 +4530,7 @@ function createPaletteButton(value){
   });
   return btn;
 }
-const paletteButtons=[];
+paletteButtons=[];
 for(let i=1;i<=BASE_COLOR_COUNT;i++){
   const btn=createPaletteButton(i);
   if(i>6) btn.classList.add('is-extra');
@@ -4243,6 +4546,7 @@ function syncPaletteButtonsColors(){
     const swatch=btn.querySelector('.swatch');
     if(swatch) swatch.style.background=colorMap[v] ?? '#000000';
   }
+  syncPaletteButtonsYarnIcons();
 }
 function syncPaletteButtonsActive(){
   for(const btn of paletteButtons){
