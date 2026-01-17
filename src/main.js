@@ -118,6 +118,7 @@ const containerEl=document.querySelector('.container');
 const zoomBtnEl=document.getElementById('zoomBtn');
 const zoomMenuEl=document.getElementById('zoomMenu');
 const touchHintEl=document.getElementById('touchHint');
+let stageUiScale=1;
 let touchHintTimer=null;
 let touchHintPointerId=null;
 let touchHintHoldTimer=null;
@@ -239,6 +240,7 @@ function applyStageScaleWithViewport(vw,vh){
   const pad=16;
   const s=Math.min((vw-pad)/512,(vh-pad)/342);
   const scale=clamp((Number.isFinite(s)&&s>0)?s:1,0.2,3);
+  stageUiScale=scale;
   if(stageEl){
     stageEl.style.width=`${Math.round(512*scale)}px`;
     stageEl.style.height=`${Math.round(342*scale)}px`;
@@ -639,12 +641,71 @@ function getPaintValue(){
   if(currentTool==='softLrg') return 21;
   return paletteValue;
 }
+function getViewportClientRect(){
+  const el=canvasViewportEl || canvas;
+  return el ? el.getBoundingClientRect() : null;
+}
+function getViewportPosFromPointerEvent(e){
+  const rect=getViewportClientRect();
+  if(!rect) return { x:Number(e.clientX)||0, y:Number(e.clientY)||0 };
+  const s=(Number(stageUiScale)||1)||1;
+  return { x:((Number(e.clientX)||0)-rect.left)/s, y:((Number(e.clientY)||0)-rect.top)/s };
+}
+function getViewportPosFromTouch(touch){
+  const rect=getViewportClientRect();
+  const s=(Number(stageUiScale)||1)||1;
+  const cx=Number(touch?.clientX)||0;
+  const cy=Number(touch?.clientY)||0;
+  if(!rect) return { x:cx/s, y:cy/s };
+  return { x:(cx-rect.left)/s, y:(cy-rect.top)/s };
+}
+function normalizeAngleDelta(a){
+  const twoPi=Math.PI*2;
+  let d=Number(a)||0;
+  d=((d+Math.PI)%twoPi+twoPi)%twoPi-Math.PI;
+  return d;
+}
+function viewToSafeParams(view){
+  const scale=Math.max(1e-6,Number(view?.scale ?? canvasViewScale) || 1);
+  const rotation=Number(view?.rotation ?? canvasViewRotation) || 0;
+  const panX=Number(view?.panX ?? canvasViewPanX) || 0;
+  const panY=Number(view?.panY ?? canvasViewPanY) || 0;
+  return { scale, rotation, panX, panY };
+}
+function screenToContent(screenX,screenY,view){
+  const v=viewToSafeParams(view);
+  const dx=(Number(screenX)||0)-v.panX;
+  const dy=(Number(screenY)||0)-v.panY;
+  const cos=Math.cos(v.rotation);
+  const sin=Math.sin(v.rotation);
+  const lx=dx*cos + dy*sin;
+  const ly=-dx*sin + dy*cos;
+  return { x:lx/v.scale, y:ly/v.scale };
+}
+function contentToScreenNoPan(x,y,view){
+  const v=viewToSafeParams(view);
+  const sx=(Number(x)||0)*v.scale;
+  const sy=(Number(y)||0)*v.scale;
+  const cos=Math.cos(v.rotation);
+  const sin=Math.sin(v.rotation);
+  return { x:sx*cos - sy*sin, y:sx*sin + sy*cos };
+}
+function computeContentBBoxNoPan(scale,rotation){
+  const v=viewToSafeParams({ scale, rotation, panX:0, panY:0 });
+  const p0=contentToScreenNoPan(0,0,v);
+  const p1=contentToScreenNoPan(W,0,v);
+  const p2=contentToScreenNoPan(0,H,v);
+  const p3=contentToScreenNoPan(W,H,v);
+  const minX=Math.min(p0.x,p1.x,p2.x,p3.x);
+  const maxX=Math.max(p0.x,p1.x,p2.x,p3.x);
+  const minY=Math.min(p0.y,p1.y,p2.y,p3.y);
+  const maxY=Math.max(p0.y,p1.y,p2.y,p3.y);
+  return { minX, maxX, minY, maxY };
+}
 function getPos(e){
-  // 把鼠标坐标换算到 canvas 像素坐标（避免缩放导致的偏差）
-  const rect=canvas.getBoundingClientRect();
-  const x=Math.round((e.clientX-rect.left)*(canvas.width/rect.width));
-  const y=Math.round((e.clientY-rect.top)*(canvas.height/rect.height));
-  return {x,y};
+  const vp=getViewportPosFromPointerEvent(e);
+  const p=screenToContent(vp.x,vp.y);
+  return { x:Math.round(p.x), y:Math.round(p.y) };
 }
 function setPixel(frame,x,y,val){
   if(x<0||y<0||x>=W||y>=H) return;
@@ -2445,7 +2506,7 @@ function startCanvasPan(e){
   e.preventDefault();
   canvasPanning=true;
   canvasPanPointerId=e.pointerId;
-  canvasPanStart={ x:e.clientX, y:e.clientY };
+  canvasPanStart=getViewportPosFromPointerEvent(e);
   canvasPanBase={ x:canvasViewPanX, y:canvasViewPanY };
   if(canvasViewportEl) canvasViewportEl.style.cursor='grabbing';
   else if(canvas) canvas.style.cursor='grabbing';
@@ -2458,8 +2519,9 @@ function startCanvasPan(e){
     if(!canvasPanning) return;
     if(ev.pointerId!==canvasPanPointerId) return;
     ev.preventDefault();
-    const dx=ev.clientX-(canvasPanStart?.x ?? ev.clientX);
-    const dy=ev.clientY-(canvasPanStart?.y ?? ev.clientY);
+    const p=getViewportPosFromPointerEvent(ev);
+    const dx=p.x-(canvasPanStart?.x ?? p.x);
+    const dy=p.y-(canvasPanStart?.y ?? p.y);
     canvasViewPanX=(canvasPanBase?.x ?? canvasViewPanX)+dx;
     canvasViewPanY=(canvasPanBase?.y ?? canvasViewPanY)+dy;
     clampCanvasPan();
@@ -2513,6 +2575,81 @@ canvas.addEventListener('pointermove',e=>{
   last=p;
   scheduleRender(rect,{ skipPreview:true });
 });
+let canvasTouchPointers=new Map();
+let canvasTouchGesture=null;
+let canvasTouchGestureTouch=null;
+function getGesturePoints(){
+  if(!canvasTouchGesture) return null;
+  const ids=canvasTouchGesture.ids;
+  const p1=canvasTouchPointers.get(ids[0]);
+  const p2=canvasTouchPointers.get(ids[1]);
+  if(!p1 || !p2) return null;
+  return { p1, p2 };
+}
+function startCanvasTouchGesture(){
+  if(canvasTouchPointers.size<2) return;
+  if(canvasPanning && canvasPanPointerId!=null) stopDrawing({ pointerId:canvasPanPointerId });
+  if(drawing && drawingPointerId!=null) stopDrawing({ pointerId:drawingPointerId });
+  const ids=[...canvasTouchPointers.keys()].slice(0,2);
+  const p1=canvasTouchPointers.get(ids[0]);
+  const p2=canvasTouchPointers.get(ids[1]);
+  const cx=(p1.x+p2.x)/2;
+  const cy=(p1.y+p2.y)/2;
+  const dx=p2.x-p1.x;
+  const dy=p2.y-p1.y;
+  const dist=Math.max(1e-6,Math.hypot(dx,dy));
+  const ang=Math.atan2(dy,dx);
+  const baseView={ scale:canvasViewScale, rotation:canvasViewRotation, panX:canvasViewPanX, panY:canvasViewPanY };
+  const anchorContent=screenToContent(cx,cy,baseView);
+  canvasTouchGesture={
+    active:true,
+    ids,
+    baseView,
+    startCenter:{ x:cx, y:cy },
+    startDist:dist,
+    startAngle:ang,
+    anchorContent,
+  };
+  if(canvasViewportEl){
+    for(const id of ids){
+      try{ canvasViewportEl.setPointerCapture(id); }catch{}
+    }
+  }
+}
+function updateCanvasTouchGesture(){
+  if(!canvasTouchGesture || !canvasTouchGesture.active) return;
+  const pts=getGesturePoints();
+  if(!pts) return;
+  const { p1, p2 }=pts;
+  const cx=(p1.x+p2.x)/2;
+  const cy=(p1.y+p2.y)/2;
+  const dx=p2.x-p1.x;
+  const dy=p2.y-p1.y;
+  const dist=Math.max(1e-6,Math.hypot(dx,dy));
+  const ang=Math.atan2(dy,dx);
+  const base=canvasTouchGesture.baseView;
+  const scale=Math.max(0.5,Math.min(3,base.scale*(dist/(canvasTouchGesture.startDist||1))));
+  const rotation=base.rotation + normalizeAngleDelta(ang-(canvasTouchGesture.startAngle||0));
+  const vec=contentToScreenNoPan(canvasTouchGesture.anchorContent.x,canvasTouchGesture.anchorContent.y,{ scale, rotation, panX:0, panY:0 });
+  canvasViewScale=scale;
+  canvasViewRotation=rotation;
+  canvasViewPanX=cx-vec.x;
+  canvasViewPanY=cy-vec.y;
+  clampCanvasPan();
+  if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(canvasViewScale*100));
+  if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(canvasViewScale*100)}%`;
+  applyCanvasViewTransform();
+}
+function endCanvasTouchGesture(){
+  if(!canvasTouchGesture) return;
+  const ids=canvasTouchGesture.ids || [];
+  canvasTouchGesture=null;
+  if(canvasViewportEl){
+    for(const id of ids){
+      try{ canvasViewportEl.releasePointerCapture(id); }catch{}
+    }
+  }
+}
 function stopDrawing(e){
   if(canvasPanning && (!e || e.pointerId==null || e.pointerId===canvasPanPointerId)){
     canvasPanning=false;
@@ -2553,6 +2690,128 @@ if(canvasViewportEl){
     e.stopPropagation();
   };
   canvasViewportEl.addEventListener('pointerdown',panDown,{capture:true});
+  canvasViewportEl.addEventListener('pointerdown',(e)=>{
+    if(e.pointerType!=='touch') return;
+    if(isCropMode()) return;
+    if(canvasTouchGestureTouch && canvasTouchGestureTouch.active){
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    const p=getViewportPosFromPointerEvent(e);
+    canvasTouchPointers.set(e.pointerId,{ x:p.x, y:p.y });
+    if(canvasTouchPointers.size>=2){
+      startCanvasTouchGesture();
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  },{capture:true});
+  canvasViewportEl.addEventListener('pointermove',(e)=>{
+    if(e.pointerType!=='touch') return;
+    if(!canvasTouchPointers.has(e.pointerId)) return;
+    if(canvasTouchGestureTouch && canvasTouchGestureTouch.active){
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    const p=getViewportPosFromPointerEvent(e);
+    canvasTouchPointers.set(e.pointerId,{ x:p.x, y:p.y });
+    if(canvasTouchGesture && canvasTouchGesture.active){
+      updateCanvasTouchGesture();
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  },{capture:true});
+  const onTouchEnd=(e)=>{
+    if(e.pointerType!=='touch') return;
+    if(canvasTouchPointers.has(e.pointerId)) canvasTouchPointers.delete(e.pointerId);
+    if(canvasTouchGestureTouch && canvasTouchGestureTouch.active){
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+    if(canvasTouchGesture && canvasTouchGesture.active){
+      if(canvasTouchPointers.size<2) endCanvasTouchGesture();
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+  canvasViewportEl.addEventListener('pointerup',onTouchEnd,{capture:true});
+  canvasViewportEl.addEventListener('pointercancel',onTouchEnd,{capture:true});
+  canvasViewportEl.addEventListener('pointerleave',onTouchEnd,{capture:true});
+  canvasViewportEl.addEventListener('touchstart',(e)=>{
+    if(isCropMode()) return;
+    if(!e.touches || e.touches.length<2) return;
+    const t1=e.touches[0];
+    const t2=e.touches[1];
+    const p1=getViewportPosFromTouch(t1);
+    const p2=getViewportPosFromTouch(t2);
+    const cx=(p1.x+p2.x)/2;
+    const cy=(p1.y+p2.y)/2;
+    const dx=p2.x-p1.x;
+    const dy=p2.y-p1.y;
+    const dist=Math.max(1e-6,Math.hypot(dx,dy));
+    const ang=Math.atan2(dy,dx);
+    if(canvasPanning && canvasPanPointerId!=null) stopDrawing({ pointerId:canvasPanPointerId });
+    if(drawing && drawingPointerId!=null) stopDrawing({ pointerId:drawingPointerId });
+    const baseView={ scale:canvasViewScale, rotation:canvasViewRotation, panX:canvasViewPanX, panY:canvasViewPanY };
+    const anchorContent=screenToContent(cx,cy,baseView);
+    canvasTouchGestureTouch={
+      active:true,
+      id1:t1.identifier,
+      id2:t2.identifier,
+      baseView,
+      startDist:dist,
+      startAngle:ang,
+      anchorContent,
+    };
+    e.preventDefault();
+    e.stopPropagation();
+  },{capture:true,passive:false});
+  canvasViewportEl.addEventListener('touchmove',(e)=>{
+    if(!canvasTouchGestureTouch || !canvasTouchGestureTouch.active) return;
+    const touches=[...(e.touches||[])];
+    if(touches.length<2){
+      canvasTouchGestureTouch=null;
+      return;
+    }
+    const t1=touches.find(t=>t.identifier===canvasTouchGestureTouch.id1) || touches[0];
+    const t2=touches.find(t=>t.identifier===canvasTouchGestureTouch.id2) || touches[1];
+    if(!t1 || !t2){
+      canvasTouchGestureTouch=null;
+      return;
+    }
+    const p1=getViewportPosFromTouch(t1);
+    const p2=getViewportPosFromTouch(t2);
+    const cx=(p1.x+p2.x)/2;
+    const cy=(p1.y+p2.y)/2;
+    const dx=p2.x-p1.x;
+    const dy=p2.y-p1.y;
+    const dist=Math.max(1e-6,Math.hypot(dx,dy));
+    const ang=Math.atan2(dy,dx);
+    const base=canvasTouchGestureTouch.baseView;
+    const scale=Math.max(0.5,Math.min(3,base.scale*(dist/(canvasTouchGestureTouch.startDist||1))));
+    const rotation=base.rotation + normalizeAngleDelta(ang-(canvasTouchGestureTouch.startAngle||0));
+    const vec=contentToScreenNoPan(canvasTouchGestureTouch.anchorContent.x,canvasTouchGestureTouch.anchorContent.y,{ scale, rotation, panX:0, panY:0 });
+    canvasViewScale=scale;
+    canvasViewRotation=rotation;
+    canvasViewPanX=cx-vec.x;
+    canvasViewPanY=cy-vec.y;
+    clampCanvasPan();
+    if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(canvasViewScale*100));
+    if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(canvasViewScale*100)}%`;
+    applyCanvasViewTransform();
+    e.preventDefault();
+    e.stopPropagation();
+  },{capture:true,passive:false});
+  const onTouchGestureEnd=(e)=>{
+    if(!canvasTouchGestureTouch || !canvasTouchGestureTouch.active) return;
+    if(!e.touches || e.touches.length<2) canvasTouchGestureTouch=null;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  canvasViewportEl.addEventListener('touchend',onTouchGestureEnd,{capture:true,passive:false});
+  canvasViewportEl.addEventListener('touchcancel',onTouchGestureEnd,{capture:true,passive:false});
   canvasViewportEl.addEventListener('pointerup',stopDrawing,{capture:true});
   canvasViewportEl.addEventListener('pointercancel',stopDrawing,{capture:true});
   canvasViewportEl.addEventListener('pointerleave',stopDrawing,{capture:true});
@@ -3253,6 +3512,7 @@ let jitterSubDelay=120;
 let canvasViewScale=1;
 let canvasViewPanX=0;
 let canvasViewPanY=0;
+let canvasViewRotation=0;
 let canvasPanMode=false;
 let canvasPanning=false;
 let canvasPanPointerId=null;
@@ -3266,7 +3526,8 @@ function getCanvasViewportSize(){
 }
 function applyCanvasViewTransform(){
   const safeScale=(Number(canvasViewScale)||1)||1;
-  const t=`translate(${canvasViewPanX}px,${canvasViewPanY}px) scale(${safeScale})`;
+  const a=Number(canvasViewRotation)||0;
+  const t=`translate(${canvasViewPanX}px,${canvasViewPanY}px) rotate(${a}rad) scale(${safeScale})`;
   if(canvas) canvas.style.transform=t;
   if(canvasBgEl) canvasBgEl.style.transform=t;
   if(cropOverlayContentEl) cropOverlayContentEl.style.transform=t;
@@ -3287,11 +3548,12 @@ function setCanvasViewScale(scale){
     const { vw, vh }=getCanvasViewportSize();
     const anchorScreenX=vw/2;
     const anchorScreenY=vh/2;
-    const anchorContentX=(anchorScreenX-canvasViewPanX)/prev;
-    const anchorContentY=(anchorScreenY-canvasViewPanY)/prev;
+    const baseView={ scale:prev, rotation:canvasViewRotation, panX:canvasViewPanX, panY:canvasViewPanY };
+    const anchorContent=screenToContent(anchorScreenX,anchorScreenY,baseView);
     canvasViewScale=next;
-    canvasViewPanX=Math.round(anchorScreenX-anchorContentX*next);
-    canvasViewPanY=Math.round(anchorScreenY-anchorContentY*next);
+    const vec=contentToScreenNoPan(anchorContent.x,anchorContent.y,{ scale:next, rotation:canvasViewRotation, panX:0, panY:0 });
+    canvasViewPanX=Math.round(anchorScreenX-vec.x);
+    canvasViewPanY=Math.round(anchorScreenY-vec.y);
     clampCanvasPan();
   }else{
     canvasViewScale=next;
@@ -3302,22 +3564,38 @@ function setCanvasViewScale(scale){
 }
 function clampCanvasPan(){
   const { vw, vh }=getCanvasViewportSize();
-  const scaledW=W*canvasViewScale;
-  const scaledH=H*canvasViewScale;
-  const minX=Math.min(0,vw-scaledW);
-  const maxX=Math.max(0,vw-scaledW);
-  const minY=Math.min(0,vh-scaledH);
-  const maxY=Math.max(0,vh-scaledH);
-  canvasViewPanX=Math.max(minX,Math.min(maxX,canvasViewPanX));
-  canvasViewPanY=Math.max(minY,Math.min(maxY,canvasViewPanY));
+  if(!Number.isFinite(vw) || !Number.isFinite(vh) || vw<=0 || vh<=0) return;
+  const bbox=computeContentBBoxNoPan(canvasViewScale,canvasViewRotation);
+  const bboxW=bbox.maxX-bbox.minX;
+  const bboxH=bbox.maxY-bbox.minY;
+  if(bboxW>=vw){
+    const minPanX=vw-bbox.maxX;
+    const maxPanX=-bbox.minX;
+    canvasViewPanX=Math.max(minPanX,Math.min(maxPanX,canvasViewPanX));
+  }else{
+    canvasViewPanX=Math.round((vw-bboxW)/2 - bbox.minX);
+  }
+  if(bboxH>=vh){
+    const minPanY=vh-bbox.maxY;
+    const maxPanY=-bbox.minY;
+    canvasViewPanY=Math.max(minPanY,Math.min(maxPanY,canvasViewPanY));
+  }else{
+    canvasViewPanY=Math.round((vh-bboxH)/2 - bbox.minY);
+  }
 }
 function fitCanvasToViewport(){
   const { vw, vh }=getCanvasViewportSize();
-  const scale=Math.max(0.5,Math.min(3,Math.min(vw/Math.max(1,W),vh/Math.max(1,H))));
+  if(!Number.isFinite(vw) || !Number.isFinite(vh) || vw<=0 || vh<=0) return;
+  const a=Number(canvasViewRotation)||0;
+  const cos=Math.abs(Math.cos(a));
+  const sin=Math.abs(Math.sin(a));
+  const bboxW=Math.max(1,cos*W + sin*H);
+  const bboxH=Math.max(1,sin*W + cos*H);
+  const scale=Math.max(0.5,Math.min(3,Math.min(vw/bboxW,vh/bboxH)));
   canvasViewScale=scale;
-  canvasViewPanX=Math.round((vw-W*scale)/2);
-  canvasViewPanY=Math.round((vh-H*scale)/2);
-  clampCanvasPan();
+  const bbox=computeContentBBoxNoPan(scale,a);
+  canvasViewPanX=Math.round((vw-(bbox.maxX-bbox.minX))/2 - bbox.minX);
+  canvasViewPanY=Math.round((vh-(bbox.maxY-bbox.minY))/2 - bbox.minY);
   if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(scale*100));
   if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(scale*100)}%`;
   applyCanvasViewTransform();
@@ -3337,12 +3615,18 @@ function fitCropToViewport(draft){
   const outW=Math.max(1,rectR-rectL);
   const outH=Math.max(1,rectB-rectT);
   const margin=12;
-  const scale=Math.max(0.5,Math.min(3,Math.min((vw-margin*2)/outW,(vh-margin*2)/outH)));
+  const a=Number(canvasViewRotation)||0;
+  const cos=Math.abs(Math.cos(a));
+  const sin=Math.abs(Math.sin(a));
+  const bboxW=Math.max(1,cos*outW + sin*outH);
+  const bboxH=Math.max(1,sin*outW + cos*outH);
+  const scale=Math.max(0.5,Math.min(3,Math.min((vw-margin*2)/bboxW,(vh-margin*2)/bboxH)));
   const centerX=(rectL+rectR)/2;
   const centerY=(rectT+rectB)/2;
   canvasViewScale=scale;
-  canvasViewPanX=Math.round(vw/2-centerX*scale);
-  canvasViewPanY=Math.round(vh/2-centerY*scale);
+  const vec=contentToScreenNoPan(centerX,centerY,{ scale, rotation:a, panX:0, panY:0 });
+  canvasViewPanX=Math.round(vw/2-vec.x);
+  canvasViewPanY=Math.round(vh/2-vec.y);
   if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(scale*100));
   if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(scale*100)}%`;
   applyCanvasViewTransform();

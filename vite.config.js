@@ -8,7 +8,7 @@ export default defineConfig({
       allow: [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')]
     },
     host: '0.0.0.0',
-    port: 5173,
+    port: 8080,
     strictPort: true
   },
   resolve: {
