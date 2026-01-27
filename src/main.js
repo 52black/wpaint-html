@@ -836,6 +836,34 @@ function stampPatternTiled(frame,x,y,val,size,brush){
   // 前景色使用传入的 val（通常为 2），背景色固定用 1
   const fg=val|0;
   const bg=1;
+  const useWigglyMarkerMask=
+    isWigglyUiTheme() &&
+    currentTool==='palette' &&
+    (paletteValue>=52 && paletteValue<=81) &&
+    wigglyMarkerBrush &&
+    (wigglyMarkerBrushPlaceholder>=42 && wigglyMarkerBrushPlaceholder<=53) &&
+    (wigglyMarkerBrush.mask instanceof Uint8Array);
+  if(useWigglyMarkerMask){
+    const sw=wigglyMarkerBrush.w|0;
+    const sh=wigglyMarkerBrush.h|0;
+    const sm=wigglyMarkerBrush.mask;
+    if(sw>0 && sh>0){
+      const left=x-Math.floor(sw/2);
+      const top=y-Math.floor(sh/2);
+      for(let oy=0;oy<sh;oy++){
+        const yy=top+oy;
+        if(yy<0||yy>=H) continue;
+        for(let ox=0;ox<sw;ox++){
+          if(sm[oy*sw+ox]!==1) continue;
+          const xx=left+ox;
+          if(xx<0||xx>=W) continue;
+          const mx=((yy%h+h)%h)*w + ((xx%w+w)%w);
+          setPixel(frame,xx,yy,(mask[mx]===1)?fg:bg);
+        }
+      }
+      return;
+    }
+  }
   const r=Math.floor(size/2);
   if(r<=0){
     const mx=((y%h+h)%h)*w + ((x%w+w)%w);
