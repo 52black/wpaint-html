@@ -120,6 +120,7 @@ const zoomBtnEl=document.getElementById('zoomBtn');
 const zoomMenuEl=document.getElementById('zoomMenu');
 const touchHintEl=document.getElementById('touchHint');
 let stageUiScale=1;
+let onStageUiScaleChanged=null;
 let touchHintTimer=null;
 let touchHintPointerId=null;
 let touchHintHoldTimer=null;
@@ -242,6 +243,7 @@ function applyStageScaleWithViewport(vw,vh){
   const s=Math.min((vw-pad)/512,(vh-pad)/342);
   const scale=clamp((Number.isFinite(s)&&s>0)?s:1,0.2,3);
   stageUiScale=scale;
+  if(typeof onStageUiScaleChanged==='function') onStageUiScaleChanged(scale);
   if(stageEl){
     stageEl.style.width=`${Math.round(512*scale)}px`;
     stageEl.style.height=`${Math.round(342*scale)}px`;
@@ -3646,7 +3648,49 @@ function getCanvasViewportSize(){
   const vh=(canvasViewportEl && canvasViewportEl.clientHeight) ? canvasViewportEl.clientHeight : H;
   return { vw, vh };
 }
+function syncCanvasZoomUI(){
+  if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(canvasViewScale*100));
+  if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(canvasViewScale*100)}%`;
+}
+function shouldSnapCanvasView(){
+  const body=document.body;
+  if(!body || body.getAttribute('data-ui-theme')!=='wigglypaint') return false;
+  const a=normalizeAngleDelta(Number(canvasViewRotation)||0);
+  return Math.abs(a)<1e-6;
+}
+function getClampedDevicePixelRatio(){
+  const d=Number(window.devicePixelRatio)||1;
+  return Math.max(1,Math.min(4,d));
+}
+function clampCanvasViewScale(scale){
+  const s=Number(scale)||1;
+  return Math.max(0.5,Math.min(3,s));
+}
+function snapCanvasViewToDevicePixels(){
+  if(!shouldSnapCanvasView()) return;
+  const ui=(Number(stageUiScale)||1)||1;
+  const dpr=getClampedDevicePixelRatio();
+  const minDevice=Math.max(1,Math.ceil(ui*0.5*dpr-1e-6));
+  const maxDevice=Math.max(minDevice,Math.floor(ui*3*dpr+1e-6));
+  let target=Math.round(ui*clampCanvasViewScale(canvasViewScale)*dpr);
+  if(target<minDevice) target=minDevice;
+  if(target>maxDevice) target=maxDevice;
+  const snappedTotal=target/dpr;
+  canvasViewScale=clampCanvasViewScale(snappedTotal/ui);
+  const denom=ui*dpr;
+  if(denom>0){
+    canvasViewPanX=Math.round(canvasViewPanX*denom)/denom;
+    canvasViewPanY=Math.round(canvasViewPanY*denom)/denom;
+  }
+  clampCanvasPan();
+  if(denom>0){
+    canvasViewPanX=Math.round(canvasViewPanX*denom)/denom;
+    canvasViewPanY=Math.round(canvasViewPanY*denom)/denom;
+  }
+}
 function applyCanvasViewTransform(){
+  snapCanvasViewToDevicePixels();
+  syncCanvasZoomUI();
   const safeScale=(Number(canvasViewScale)||1)||1;
   const a=Number(canvasViewRotation)||0;
   const t=`translate(${canvasViewPanX}px,${canvasViewPanY}px) rotate(${a}rad) scale(${safeScale})`;
@@ -3663,6 +3707,9 @@ function updateCheckerboardScale(){
   checkerboard.style.backgroundSize=`${px}px ${px}px`;
   checkerboard.style.backgroundPosition=`0 0, ${Math.round(px/2)}px ${Math.round(px/2)}px`;
 }
+onStageUiScaleChanged=()=>{
+  applyCanvasViewTransform();
+};
 function setCanvasViewScale(scale){
   const prev=canvasViewScale;
   const next=Math.max(0.5,Math.min(3,Number(scale)||1));
@@ -3680,8 +3727,7 @@ function setCanvasViewScale(scale){
   }else{
     canvasViewScale=next;
   }
-  if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(next*100));
-  if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(next*100)}%`;
+  syncCanvasZoomUI();
   applyCanvasViewTransform();
 }
 function clampCanvasPan(){
@@ -3718,8 +3764,7 @@ function fitCanvasToViewport(){
   const bbox=computeContentBBoxNoPan(scale,a);
   canvasViewPanX=Math.round((vw-(bbox.maxX-bbox.minX))/2 - bbox.minX);
   canvasViewPanY=Math.round((vh-(bbox.maxY-bbox.minY))/2 - bbox.minY);
-  if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(scale*100));
-  if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(scale*100)}%`;
+  syncCanvasZoomUI();
   applyCanvasViewTransform();
 }
 function fitCropToViewport(draft){
@@ -3749,8 +3794,7 @@ function fitCropToViewport(draft){
   const vec=contentToScreenNoPan(centerX,centerY,{ scale, rotation:a, panX:0, panY:0 });
   canvasViewPanX=Math.round(vw/2-vec.x);
   canvasViewPanY=Math.round(vh/2-vec.y);
-  if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(scale*100));
-  if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(scale*100)}%`;
+  syncCanvasZoomUI();
   applyCanvasViewTransform();
 }
 function setCanvasPanMode(on){

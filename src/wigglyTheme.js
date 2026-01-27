@@ -263,6 +263,7 @@ export function createWigglyTheme(deps){
   const img=ctx.createImageData(w,h);
   const data=img.data;
   const transparentZero=Boolean(options && options.transparentZero);
+  const transparentPaletteIndex0=Boolean(options && options.transparentPaletteIndex0);
   const palette=getWigglyPaletteFromColorMap();
   const pattern=wigglyPatternCache;
   for(let i=0;i<decoded.pix.length;i++){
@@ -272,6 +273,10 @@ export function createWigglyTheme(deps){
     const y=(i/w)|0;
     const colorIndex=mapDeckPixelToColorIndex(v,x,y,pattern,transparentZero);
     if(colorIndex<0){
+      data[o+3]=0;
+      continue;
+    }
+    if(transparentPaletteIndex0 && colorIndex===0){
       data[o+3]=0;
       continue;
     }
@@ -323,11 +328,12 @@ export function createWigglyTheme(deps){
   await ensureWigglyPalette();
   await loadWigglyPatterns();
   const transparentZero=Boolean(options && options.transparentZero);
+  const transparentPaletteIndex0=Boolean(options && options.transparentPaletteIndex0);
   const patternReady=Boolean(wigglyPatternCache && wigglyPatternCache.w===8 && wigglyPatternCache.pix && wigglyPatternCache.pix.length);
   const palette=getWigglyPaletteFromColorMap();
   const paletteReady=palette.length===16;
   const paletteKey=palette.join('|');
-  const cacheKey=`${placeholderIndex}|${patternReady?1:0}|${paletteReady?1:0}|${transparentZero?1:0}|${paletteKey}`;
+  const cacheKey=`${placeholderIndex}|${patternReady?1:0}|${paletteReady?1:0}|${transparentZero?1:0}|${transparentPaletteIndex0?1:0}|${paletteKey}`;
   if(wigglyImageUrlCache.has(cacheKey)) return wigglyImageUrlCache.get(cacheKey);
   const assets=await loadWigglyAssets();
   const assetRaw=assets[placeholderIndex];
@@ -335,7 +341,7 @@ export function createWigglyTheme(deps){
     wigglyImageUrlCache.set(cacheKey,'');
     return '';
   }
-  const url=decodeDeckImageToDataUrl(assetRaw,{ transparentZero });
+  const url=decodeDeckImageToDataUrl(assetRaw,{ transparentZero, transparentPaletteIndex0 });
   wigglyImageUrlCache.set(cacheKey,url);
   return url;
 }
@@ -344,30 +350,52 @@ export function createWigglyTheme(deps){
   return wigglyPaletteCache;
 }
 
-  async function getDeckAssetBrush(placeholderIndex){
+  async function getDeckAssetBrush(placeholderIndex,options){
+    await loadWigglyPatterns();
     const idxNum=Number(placeholderIndex)||0;
     if(idxNum<0) return null;
-    if(wigglyAssetBrushCache.has(idxNum)) return wigglyAssetBrushCache.get(idxNum) || null;
+    const isMarkerShape=(idxNum>=MARKER_SHAPE_ASSET_FIRST && idxNum<=MARKER_SHAPE_ASSET_LAST);
+    const transparentZero=(options && typeof options.transparentZero==='boolean')
+      ? options.transparentZero
+      : isMarkerShape;
+    const transparentPaletteIndex0=(options && typeof options.transparentPaletteIndex0==='boolean')
+      ? options.transparentPaletteIndex0
+      : isMarkerShape;
+    const patternReady=Boolean(wigglyPatternCache && wigglyPatternCache.w===8 && wigglyPatternCache.pix && wigglyPatternCache.pix.length);
+    const cacheKey=`${idxNum}|${patternReady?1:0}|${transparentZero?1:0}|${transparentPaletteIndex0?1:0}`;
+    if(wigglyAssetBrushCache.has(cacheKey)) return wigglyAssetBrushCache.get(cacheKey) || null;
     const assets=await loadWigglyAssets();
     const raw=assets[idxNum];
     if(typeof raw!=='string' || !raw.startsWith('%%IMG')){
-      wigglyAssetBrushCache.set(idxNum,null);
+      wigglyAssetBrushCache.set(cacheKey,null);
       return null;
     }
     const decoded=decodeDeckImageString(raw);
     if(!decoded || !(decoded.w>0 && decoded.h>0) || !(decoded.pix instanceof Uint8Array)){
-      wigglyAssetBrushCache.set(idxNum,null);
+      wigglyAssetBrushCache.set(cacheKey,null);
       return null;
     }
     const w=decoded.w|0;
     const h=decoded.h|0;
     const mask=new Uint8Array((w*h)|0);
+    const pattern=wigglyPatternCache;
     for(let i=0;i<mask.length;i++){
-      const v=decoded.pix[i]&255;
-      mask[i]=v?1:0;
+      const v=decoded.pix[i]|0;
+      const x=i%w;
+      const y=(i/w)|0;
+      const colorIndex=mapDeckPixelToColorIndex(v,x,y,pattern,transparentZero);
+      if(colorIndex<0){
+        mask[i]=0;
+        continue;
+      }
+      if(transparentPaletteIndex0 && colorIndex===0){
+        mask[i]=0;
+        continue;
+      }
+      mask[i]=1;
     }
     const brush={ w, h, mask };
-    wigglyAssetBrushCache.set(idxNum,brush);
+    wigglyAssetBrushCache.set(cacheKey,brush);
     return brush;
   }
   async function updateMarkerSizesDisplay(placeholderIndex){
@@ -379,9 +407,11 @@ export function createWigglyTheme(deps){
     const idx=Number(placeholderIndex)||0;
     const wanted=String(idx);
     markerEl.dataset.markerPlaceholder=wanted;
+    const isMarkerShape=(idx>=MARKER_SHAPE_ASSET_FIRST && idx<=MARKER_SHAPE_ASSET_LAST);
+    const transparentPaletteIndex0=isMarkerShape;
     const [url,brush]=await Promise.all([
-      getWigglyImageUrl(idx,{ transparentZero:true }),
-      getDeckAssetBrush(idx),
+      getWigglyImageUrl(idx,{ transparentZero:true, transparentPaletteIndex0 }),
+      getDeckAssetBrush(idx,{ transparentZero:true, transparentPaletteIndex0 }),
     ]);
     if(markerEl.dataset.markerPlaceholder!==wanted) return;
     if(!url){

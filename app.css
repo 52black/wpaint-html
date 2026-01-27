@@ -23,6 +23,8 @@ body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="target"] 
 body[data-ui-theme="wigglypaint"] .stage,
 body[data-ui-theme="wigglypaint"] .wiggly-widget.has-image,
 body[data-ui-theme="wigglypaint"] .wiggly-theme { image-rendering: crisp-edges; image-rendering: pixelated; }
+body[data-ui-theme="wigglypaint"] .canvas,
+body[data-ui-theme="wigglypaint"] .canvas-bg { image-rendering: crisp-edges; image-rendering: pixelated; }
 body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="button6"]{
   background: rgba(17,17,17,.92);
   color: #fff;
