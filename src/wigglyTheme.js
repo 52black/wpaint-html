@@ -642,6 +642,10 @@ export function createWigglyTheme(deps){
   if(!isWigglyUiTheme()){
     wigglyThemeEl.style.removeProperty('background-image');
     if(stageEl) stageEl.style.removeProperty('background-image');
+    if(stageEl){
+      stageEl.style.removeProperty('background-size');
+      stageEl.style.removeProperty('background-repeat');
+    }
     syncWigglyCanvasViewport();
     return;
   }

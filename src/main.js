@@ -4139,6 +4139,7 @@ function setUiTheme(theme){
   syncUiThemeRadios();
   applyCatSpriteIcons();
   syncPaletteButtonsYarnIcons();
+  applyBackground();
   applyWigglyTheme();
   if(next==='wigglypaint' && typeof syncWigglyActiveStates==='function'){
     syncWigglyActiveStates(currentTool,paletteValue);
@@ -4162,6 +4163,7 @@ function setUiTheme(theme){
   syncUiThemeRadios();
   applyCatSpriteIcons();
   syncPaletteButtonsYarnIcons();
+  applyBackground();
   applyWigglyTheme();
   if(isCatUiTheme()){
     reseedCatPaws();
