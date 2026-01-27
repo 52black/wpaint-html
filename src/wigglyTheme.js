@@ -651,6 +651,31 @@ export function createWigglyTheme(deps){
   }
   void applyWigglyThemeImages();
 }
+  async function getWigglyDimsSize(){
+    if(wigglyDimsRect && wigglyDimsRect.w>0 && wigglyDimsRect.h>0){
+      return [wigglyDimsRect.w|0,wigglyDimsRect.h|0];
+    }
+    const deckText=await loadWigglyDeckText();
+    if(!deckText) return null;
+    const parsed=parseDeckWidgetMap(deckText);
+    if(!parsed || !Array.isArray(parsed.widgets)) return null;
+    const dimsWidget=parsed.widgets.find((widget)=>widget && widget.id==='dims');
+    if(dimsWidget && Array.isArray(dimsWidget.size)){
+      const w=Number(dimsWidget.size[0])||0;
+      const h=Number(dimsWidget.size[1])||0;
+      if(w>0 && h>0){
+        const pos=Array.isArray(dimsWidget.pos) ? dimsWidget.pos : [0,0];
+        wigglyDimsRect={
+          x:Number(pos[0])||0,
+          y:Number(pos[1])||0,
+          w,
+          h,
+        };
+        return [w|0,h|0];
+      }
+    }
+    return null;
+  }
   function normalizeUiTheme(raw){
     return raw==='wigglypaint'?'wigglypaint':(raw==='cat'?'cat':(raw==='cute'?'cute':''));
   }
@@ -666,5 +691,6 @@ export function createWigglyTheme(deps){
     syncWigglyThemeButtons,
     syncWigglyCanvasViewport,
     syncWigglyThemeAdvancedVisibility,
+    getWigglyDimsSize,
   };
 }

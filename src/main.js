@@ -2852,11 +2852,24 @@ function syncResizeModalUI(){
   if(resizeGridEl) resizeGridEl.style.display=allLayers ? '' : 'none';
   if(resizeApplyEl) resizeApplyEl.textContent=allLayers ? '清空并应用' : '清空当前画布';
 }
-function clearCanvas(){
+async function clearCanvas(){
   if(!resizeModalEl) return;
   playSound('snap') || playSound('click');
-  if(resizeWEl) resizeWEl.value=String(Math.min(1000,W|0));
-  if(resizeHEl) resizeHEl.value=String(Math.min(750,H|0));
+  let defW=W|0;
+  let defH=H|0;
+  if(isWigglyUiTheme() && typeof getWigglyDimsSize==='function'){
+    const dims=await getWigglyDimsSize();
+    if(Array.isArray(dims) && dims.length>=2){
+      const w=Number(dims[0])||0;
+      const h=Number(dims[1])||0;
+      if(w>0 && h>0){
+        defW=w;
+        defH=h;
+      }
+    }
+  }
+  if(resizeWEl) resizeWEl.value=String(Math.min(1000,defW));
+  if(resizeHEl) resizeHEl.value=String(Math.min(750,defH));
   const cel=getCurrentCel();
   ensureCelModel(cel);
   const hasMultipleLayers=Boolean(cel && Array.isArray(cel.layers) && cel.layers.length>1);
@@ -3844,7 +3857,7 @@ const wigglyThemeApi=createWigglyTheme({
   onRequestReturnAfterColor: ()=>{ returnToWigglyAfterColor=true; },
   onRequestReturnAfterCrop: ()=>{ returnToWigglyAfterCrop=true; },
 });
-const { applyWigglyTheme, isWigglyUiTheme, normalizeUiTheme, syncWigglyActiveStates, syncWigglyThemeButtons, syncWigglyCanvasViewport, syncWigglyThemeAdvancedVisibility }=wigglyThemeApi;
+const { applyWigglyTheme, isWigglyUiTheme, normalizeUiTheme, syncWigglyActiveStates, syncWigglyThemeButtons, syncWigglyCanvasViewport, syncWigglyThemeAdvancedVisibility, getWigglyDimsSize }=wigglyThemeApi;
 const SHORTCUTS_STORAGE_KEY='wpaint.shortcuts.v1';
 const NUMPAD_ENABLED_STORAGE_KEY='wpaint.numPadEnabled.v1';
 const CAT_SPRITE_CONFIG={
