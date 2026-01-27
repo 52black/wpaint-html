@@ -2,9 +2,44 @@ html,body { height: 100%; }
 body { margin: 0; background: #000; display: grid; place-items: center; overflow: hidden; }
 .stage, .container, .canvas, .sidebar, .tool-btn, .palette-panel, .pattern-picker { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .tool-btn, .canvas { -webkit-tap-highlight-color: transparent; }
-.stage { position: relative; }
+.stage { position: relative; overflow: hidden; }
 .stage .container { transform-origin: top left; }
 .container { width: 512px; height: 342px; position: relative; background: #fff; overflow: visible; }
+.wiggly-theme { position: absolute; inset: 0; z-index: 5; display: none; background-repeat: no-repeat; background-position: 0 0; background-size: 100% 100%; pointer-events: none; }
+body[data-ui-theme="wigglypaint"] .wiggly-theme { display: block; }
+body[data-ui-theme="wigglypaint"] .container { background: transparent; }
+.wiggly-widget { pointer-events: none; z-index: 6; }
+.wiggly-widget > span { pointer-events: none; }
+.wiggly-widget.has-image { pointer-events: none; }
+.wiggly-widget.check { pointer-events: none; }
+.wiggly-widget.wiggly-clickable { pointer-events: auto; }
+body:not([data-ui-theme="wigglypaint"]) .wiggly-widget { display: none; }
+body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="openAbout"],
+body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="quickColorPicker"],
+body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="lang_btn"],
+body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="target"] { display: none !important; }
+.wiggly-widget { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; color: #111; border: 1px solid rgba(0,0,0,.25); background: rgba(255,255,255,.45); border-radius: 4px; overflow: hidden; transition: transform 140ms ease; }
+.wiggly-widget.has-image { background-color: transparent; border: none; background-repeat: no-repeat; background-position: center; background-size: contain; }
+.wiggly-widget.is-ghost { opacity: .25; border-style: dashed; }
+.wiggly-widget.is-active { transform: translateX(-10px); }
+.wiggly-widget.is-active[data-name^="hi"] { transform: translateY(-8px); }
+.wiggly-widget.field { background: rgba(255,255,255,.35); font-size: 10px; }
+.wiggly-widget.slider { background: transparent; border: none; }
+.wiggly-slider-track { position: absolute; left: 2px; right: 2px; top: 50%; height: 4px; transform: translateY(-50%); background: rgba(0,0,0,.25); border-radius: 999px; }
+.wiggly-slider-thumb { position: absolute; top: 50%; width: 10px; height: 10px; transform: translate(-50%,-50%); left: 70%; background: rgba(0,0,0,.8); border-radius: 50%; }
+.wiggly-widget.check { justify-content: flex-start; padding-left: 18px; padding-right: 6px; gap: 6px; }
+.wiggly-check { position: absolute; left: 4px; width: 10px; height: 10px; border: 1px solid rgba(0,0,0,.35); border-radius: 3px; background: rgba(255,255,255,.6); }
+body[data-ui-theme="wigglypaint"] .toolbar-left,
+body[data-ui-theme="wigglypaint"] .toolbar-right,
+body[data-ui-theme="wigglypaint"] .sidebar-footer,
+body[data-ui-theme="wigglypaint"] .crop-panel,
+body[data-ui-theme="wigglypaint"] .select-panel,
+body[data-ui-theme="wigglypaint"] .layer-panel,
+body[data-ui-theme="wigglypaint"] .zoom-menu-wrap,
+body[data-ui-theme="wigglypaint"] .overlay,
+body[data-ui-theme="wigglypaint"] .pattern-picker,
+body[data-ui-theme="wigglypaint"] .palette-panel,
+body[data-ui-theme="wigglypaint"] .jitter-panel { display: none !important; }
 .canvas-viewport { position: absolute; top: 0; left: 0; width: 360px; height: 340px; border: 1px solid #ccc; background: transparent; z-index: 2; overflow: hidden; touch-action: none; }
 .canvas-bg { position: absolute; top: 0; left: 0; width: 360px; height: 340px; z-index: 1; }
 .canvas { position: absolute; top: 0; left: 0; width: 360px; height: 340px; border: none; background: transparent; z-index: 2; touch-action: none; }

@@ -6,6 +6,7 @@ import { createTimelineController } from './timelineUI.js';
 import { createHistoryController } from './history.js';
 import { clamp, openModal, closeModal, makeModalDraggable } from './modal.js';
 import { createPatternController } from './patterns.js';
+import { createWigglyTheme } from './wigglyTheme.js';
 import color5DeckText from '../color5.deck?raw';
 if(new URLSearchParams(location.search).has('spriteTest')){
   void import('./spriteTest.js');
@@ -321,6 +322,8 @@ let drawing=false;
 let drawingPointerId=null;
 let last=null;
 let cropController=null;
+let returnToWigglyAfterColor=false;
+let returnToWigglyAfterCrop=false;
 let activeSchemeId='';
 function isCropMode(){
   return Boolean(cropController && cropController.isActive());
@@ -330,6 +333,10 @@ function openCrop(){
 }
 function closeCrop(){
   if(cropController) cropController.close();
+  if(returnToWigglyAfterCrop){
+    returnToWigglyAfterCrop=false;
+    setUiTheme('wigglypaint');
+  }
 }
 const penBtn=document.getElementById('pen');
 const pen2Btn=document.getElementById('pen2');
@@ -631,6 +638,9 @@ function setTool(tool){
     eraserControlsEl.style.display=erasing?'block':'none';
   }
   syncPaletteButtonsActive();
+  if(isWigglyUiTheme() && typeof syncWigglyActiveStates==='function'){
+    syncWigglyActiveStates(currentTool,paletteValue);
+  }
 }
 function getPaintValue(){
   if(currentTool==='eraser') return 0;
@@ -3221,15 +3231,14 @@ function bindAdvancedPanelDrag(){
 }
 bindAdvancedPanelDrag();
 advancedBtn.addEventListener('click',()=>{
-  container.classList.toggle('advanced');
-  advancedBtn.classList.toggle('is-active',container.classList.contains('advanced'));
-  if(container.classList.contains('advanced')) ensureAdvancedPanelPlacement();
+  toggleAdvancedMode();
 });
 document.getElementById('switchColor').addEventListener('click',()=>{
   stopAnim();
   displayFrame=3;
   colorPage.style.display='flex';
   container.classList.add('color-mode');
+  if(isWigglyUiTheme()) syncWigglyThemeButtons();
   schemeBaseline=captureBaseline();
   syncOutlineColorsUI();
   renderCurrent();
@@ -3237,7 +3246,12 @@ document.getElementById('switchColor').addEventListener('click',()=>{
 document.getElementById('back').addEventListener('click',()=>{
   colorPage.style.display='none';
   container.classList.remove('color-mode');
+  if(isWigglyUiTheme()) syncWigglyThemeButtons();
   applyPlaybackMode();
+  if(returnToWigglyAfterColor){
+    returnToWigglyAfterColor=false;
+    setUiTheme('wigglypaint');
+  }
 });
 document.querySelectorAll('#colorPage input[type=color]').forEach(input=>{
   const idx=Number(input.dataset.index);
@@ -3797,6 +3811,40 @@ const shortcutsResetEl=document.getElementById('shortcutsReset');
 const uiThemeDefaultEl=document.getElementById('uiThemeDefault');
 const uiThemeCuteEl=document.getElementById('uiThemeCute');
 const uiThemeCatEl=document.getElementById('uiThemeCat');
+const uiThemeWigglyEl=document.getElementById('uiThemeWiggly');
+const wigglyThemeEl=document.getElementById('wigglyTheme');
+function setAdvancedMode(next){
+  if(!containerEl || !advancedBtn) return;
+  containerEl.classList.toggle('advanced',next);
+  advancedBtn.classList.toggle('is-active',containerEl.classList.contains('advanced'));
+  if(containerEl.classList.contains('advanced')) ensureAdvancedPanelPlacement();
+  if(isWigglyUiTheme()){
+    syncWigglyThemeButtons();
+    syncWigglyThemeAdvancedVisibility();
+    syncWigglyCanvasViewport();
+  }
+}
+function toggleAdvancedMode(){
+  if(!containerEl) return;
+  setAdvancedMode(!containerEl.classList.contains('advanced'));
+}
+const wigglyThemeApi=createWigglyTheme({
+  containerEl,
+  stageEl,
+  wigglyThemeEl,
+  canvasViewportEl,
+  onSetCanvasSize: setCanvasSize,
+  colorMap,
+  BASE_COLOR_COUNT,
+  decodeDeckImageString,
+  extractJsonObjectAt,
+  onToggleAdvanced: toggleAdvancedMode,
+  onDisableAdvanced: ()=>setAdvancedMode(false),
+  onSwitchToDefaultTheme: ()=>setUiTheme(''),
+  onRequestReturnAfterColor: ()=>{ returnToWigglyAfterColor=true; },
+  onRequestReturnAfterCrop: ()=>{ returnToWigglyAfterCrop=true; },
+});
+const { applyWigglyTheme, isWigglyUiTheme, normalizeUiTheme, syncWigglyActiveStates, syncWigglyThemeButtons, syncWigglyCanvasViewport, syncWigglyThemeAdvancedVisibility }=wigglyThemeApi;
 const SHORTCUTS_STORAGE_KEY='wpaint.shortcuts.v1';
 const NUMPAD_ENABLED_STORAGE_KEY='wpaint.numPadEnabled.v1';
 const CAT_SPRITE_CONFIG={
@@ -3899,9 +3947,6 @@ async function applyCatSpriteIcons(){
     btn.classList.toggle('cat-sprite-plain',!hasSpan);
     btn.style.setProperty('--cat-icon',`url("${url}")`);
   }
-}
-function normalizeUiTheme(raw){
-  return raw==='cat'?'cat':(raw==='cute'?'cute':'');
 }
 function isCuteUiTheme(){
   return document.body.getAttribute('data-ui-theme')==='cute';
@@ -4081,9 +4126,11 @@ function syncPaletteButtonsYarnIcons(){
 function syncUiThemeRadios(){
   const isCute=isCuteUiTheme();
   const isCat=isCatUiTheme();
-  if(uiThemeDefaultEl) uiThemeDefaultEl.checked=!isCute && !isCat;
+  const isWiggly=isWigglyUiTheme();
+  if(uiThemeDefaultEl) uiThemeDefaultEl.checked=!isCute && !isCat && !isWiggly;
   if(uiThemeCuteEl) uiThemeCuteEl.checked=isCute;
   if(uiThemeCatEl) uiThemeCatEl.checked=isCat;
+  if(uiThemeWigglyEl) uiThemeWigglyEl.checked=isWiggly;
 }
 function setUiTheme(theme){
   const next=normalizeUiTheme(theme);
@@ -4092,6 +4139,10 @@ function setUiTheme(theme){
   syncUiThemeRadios();
   applyCatSpriteIcons();
   syncPaletteButtonsYarnIcons();
+  applyWigglyTheme();
+  if(next==='wigglypaint' && typeof syncWigglyActiveStates==='function'){
+    syncWigglyActiveStates(currentTool,paletteValue);
+  }
   if(next==='cat'){
     reseedCatPaws();
     layoutCatPaws();
@@ -4111,6 +4162,7 @@ function setUiTheme(theme){
   syncUiThemeRadios();
   applyCatSpriteIcons();
   syncPaletteButtonsYarnIcons();
+  applyWigglyTheme();
   if(isCatUiTheme()){
     reseedCatPaws();
     layoutCatPaws();
@@ -4681,6 +4733,11 @@ if(uiThemeCatEl){
     if(uiThemeCatEl.checked) setUiTheme('cat');
   });
 }
+if(uiThemeWigglyEl){
+  uiThemeWigglyEl.addEventListener('change',()=>{
+    if(uiThemeWigglyEl.checked) setUiTheme('wigglypaint');
+  });
+}
 function updateFileMenuPlacement(){
   if(!fileMenuEl || !fileMenuToggleEl) return;
   const rootRect=(containerEl?containerEl.getBoundingClientRect():null);
@@ -4837,6 +4894,12 @@ cropController=createCropController({
   resetHistory,
   applyBackground,
   applyPlaybackMode,
+  onClose: ()=>{
+    if(returnToWigglyAfterCrop){
+      returnToWigglyAfterCrop=false;
+      setUiTheme('wigglypaint');
+    }
+  },
 });
 function createPaletteButton(value){
   const btn=document.createElement('button');
@@ -4880,7 +4943,9 @@ function syncPaletteButtonsActive(){
 function applyBackground(){
   // “透明背景”开关只影响棋盘格的显示，用于表达透明区域
   const bg1=colorMap[1];
-  if(containerEl) containerEl.style.background='#fff';
+  if(containerEl){
+    containerEl.style.background=isWigglyUiTheme() ? 'transparent' : '#fff';
+  }
   const showBgLayer=toggleTransparent.checked;
   checkerboard.style.display='block';
   if(customBgUrl){

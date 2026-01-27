@@ -40,6 +40,7 @@ export function createCropController(ctx){
     applyBackground,
     applyPlaybackMode,
     markCompositeDirty,
+    onClose,
   }=ctx;
 
   let cropMode=false;
@@ -300,6 +301,7 @@ export function createCropController(ctx){
     cropMode=false;
     containerEl.classList.remove('crop-mode');
     if(cropBtnEl) cropBtnEl.classList.remove('is-active');
+    if(typeof onClose==='function') onClose();
   }
   function cropArray(src,srcW,srcH,left,top,newW,newH){
     const out=new Uint8Array(newW*newH);
