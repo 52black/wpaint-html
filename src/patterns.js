@@ -2,6 +2,9 @@ export function createPatternController(ctx){
   const {
     stamp,
     stampPattern,
+    stampPatternOriginal,
+    // 平铺填充版的图案盖章（世界坐标纹理）
+    stampPatternTiled,
     u8ToB64,
     b64ToU8,
     patternPickerEl,
@@ -26,6 +29,9 @@ export function createPatternController(ctx){
   let activePatternId='default';
   let pendingPattern=null;
   let nextPatternId=1;
+  // 允许外部临时覆盖当前调色工具使用的画笔（例如 deck 的 8x8 图案）
+  // 如果设置了 activeOverrideBrush，则优先使用该画笔进行 stampPalette
+  let activeOverrideBrush=null;
 
   const patternRenderCanvas=document.createElement('canvas');
   const patternRenderCtx=patternRenderCanvas.getContext('2d');
@@ -217,9 +223,19 @@ export function createPatternController(ctx){
   }
 
   function stampPalette(frame,x,y,val,size){
-    const brush=getBrushForSize(activePatternId);
+    // 优先使用外部覆盖的画笔，否则按当前选择的 patternId 获取
+    const override=activeOverrideBrush;
+    const brush=(override && override.brush) ? override.brush : getBrushForSize(activePatternId);
     if(brush){
-      stampPattern(frame,x,y,val,size,brush);
+      const drawVal=(override && Number.isFinite(override.valOverride)) ? (override.valOverride|0) : (val|0);
+      const mode=(override && override.mode) ? String(override.mode) : '';
+      if(mode==='original' && typeof stampPatternOriginal==='function'){
+        stampPatternOriginal(frame,x,y,drawVal,brush);
+      }else if(typeof stampPatternTiled==='function'){
+        stampPatternTiled(frame,x,y,drawVal,size,brush);
+      }else{
+        stampPattern(frame,x,y,drawVal,size,brush);
+      }
       return;
     }
     stamp(frame,x,y,val,size);
@@ -340,5 +356,18 @@ export function createPatternController(ctx){
     stampPalette,
     getConfig,
     applyConfig,
+    // 设置/清除外部覆盖画笔（传入 null 代表清除）
+    setActiveOverrideBrush(brush,options){
+      if(brush && brush.mask instanceof Uint8Array && brush.w>0 && brush.h>0){
+        const next={
+          brush:{ w:brush.w|0, h:brush.h|0, mask: brush.mask },
+          mode: options && options.mode ? String(options.mode) : '',
+          valOverride: (options && Number.isFinite(options.valOverride)) ? (Number(options.valOverride)|0) : null,
+        };
+        activeOverrideBrush=next;
+      }else{
+        activeOverrideBrush=null;
+      }
+    },
   };
 }

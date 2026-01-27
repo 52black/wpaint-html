@@ -294,7 +294,10 @@ const canvasViewportEl=document.getElementById('canvasViewport');
 const canvasBgEl=document.getElementById('canvasBg');
 const ctx=canvas.getContext('2d');
 let W=canvas.width,H=canvas.height;
-const MAX_COLOR_INDEX=21;
+// 支持扩展的“调色板值”：除了 0、1~16、17~21（勾线工具）之外，
+// 还允许 52~81 作为“别名值”，用于从 deck 中的颜色 2~31 映射过来。
+// 渲染时会把 52~81 折算为 1~16（按 16 色循环），这样无需扩展实际调色板长度。
+const MAX_COLOR_INDEX=81;
 const BASE_COLOR_COUNT=16;
 const OUTLINE_FIRST=17;
 const OUTLINE_LAST=21;
@@ -313,6 +316,23 @@ let timelineSelected=new Set([0]);
 // 约定：值 1 为背景色，值 2 为前景色（第一只笔）
 const defaultColors=['#000000','#fafafa','#4b4b4b','#d4d4d4','#9d9d9d','#f9d381','#eaaf4d','#f9938a','#e75952','#9ad1f9','#58aeee','#8deda7','#44c55b','#c3a7e1','#9569c8','#bab5aa','#948e82','#000000','#000000','#000000','#000000','#000000'];
 const colorMap=defaultColors.slice();
+
+// 把帧中的“画笔值”折算为用于查色的索引：
+// - 0：透明
+// - 1~16：基础调色板
+// - 17~21：勾线颜色（单独维护在 colorMap[17..21]）
+// - 52~81：来自 deck 的颜色别名（对应 deck 中 2~31），折算为 1~16
+function resolveColorIndexFromValue(val){
+  const v=val|0;
+  if(v<=0) return 0;
+  if(v>=52 && v<=81){
+    // 52 对应 deck 色 2，81 对应 deck 色 31
+    // 折算为基础调色板 1~16，保证与当前 16 色方案一致
+    return ((v-52)%BASE_COLOR_COUNT)+1;
+  }
+  return v;
+}
+
 let currentTool='pencil';
 let paletteValue=2;
 let jitterLevel=0;
@@ -649,7 +669,9 @@ function getPaintValue(){
   if(currentTool==='blobby') return 19;
   if(currentTool==='stippleTiny') return 20;
   if(currentTool==='softLrg') return 21;
-  return paletteValue;
+  // paletteValue 支持 52~81 的 deck 别名；绘图数据仅存 0~21 的有效值
+  // 当选择 deck 图案时，用“前景色”2 作为涂抹颜色，并由图案的掩码控制纹理
+  return (paletteValue>MAX_COLOR_INDEX) ? 2 : paletteValue;
 }
 function getViewportClientRect(){
   const el=canvasViewportEl || canvas;
@@ -738,6 +760,26 @@ function setPixel(frame,x,y,val){
 }
 function stamp(frame,x,y,val,size){
   // 把“粗细”转换成一个圆形像素章，盖到当前帧上
+  const wigglyShape=isWigglyUiTheme() ? wigglyMarkerBrush : null;
+  if(wigglyShape && currentTool==='palette'){
+    const sw=wigglyShape.w|0, sh=wigglyShape.h|0;
+    const sm=wigglyShape.mask;
+    if(sw>0 && sh>0 && sm instanceof Uint8Array){
+      const left=x-Math.floor(sw/2);
+      const top=y-Math.floor(sh/2);
+      for(let oy=0;oy<sh;oy++){
+        const yy=top+oy;
+        if(yy<0||yy>=H) continue;
+        for(let ox=0;ox<sw;ox++){
+          if(sm[oy*sw+ox]!==1) continue;
+          const xx=left+ox;
+          if(xx<0||xx>=W) continue;
+          setPixel(frame,xx,yy,val);
+        }
+      }
+      return;
+    }
+  }
   const r=Math.floor(size/2);
   if(r<=0){ setPixel(frame,x,y,val); return; }
   const r2=r*r;
@@ -767,9 +809,56 @@ function stampPattern(frame,x,y,val,size,brush){
     }
   }
 }
+function stampPatternOriginal(frame,x,y,val,brush){
+  const w=brush.w|0;
+  const h=brush.h|0;
+  const mask=brush.mask;
+  if(!(w>0 && h>0) || !(mask instanceof Uint8Array)) return;
+  const left=x-Math.floor(w/2);
+  const top=y-Math.floor(h/2);
+  for(let oy=0;oy<h;oy++){
+    const yy=top+oy;
+    if(yy<0||yy>=H) continue;
+    for(let ox=0;ox<w;ox++){
+      if(mask[oy*w+ox]!==1) continue;
+      const xx=left+ox;
+      if(xx<0||xx>=W) continue;
+      setPixel(frame,xx,yy,val);
+    }
+  }
+}
+// 以世界坐标进行平铺填充的图案盖章：把图案当作固定纹理，而不是缩放后的单次盖章
+function stampPatternTiled(frame,x,y,val,size,brush){
+  const w=brush.w|0, h=brush.h|0;
+  const mask=brush.mask;
+  // 前景色使用传入的 val（通常为 2），背景色固定用 1
+  const fg=val|0;
+  const bg=1;
+  const r=Math.floor(size/2);
+  if(r<=0){
+    const mx=((y%h+h)%h)*w + ((x%w+w)%w);
+    setPixel(frame,x,y,(mask[mx]===1)?fg:bg);
+    return;
+  }
+  const r2=r*r;
+  for(let dy=-r;dy<=r;dy++){
+    const yy=y+dy;
+    if(yy<0||yy>=H) continue;
+    for(let dx=-r;dx<=r;dx++){
+      if(dx*dx+dy*dy>r2) continue;
+      const xx=x+dx;
+      if(xx<0||xx>=W) continue;
+      const mx=((yy%h+h)%h)*w + ((xx%w+w)%w);
+      setPixel(frame,xx,yy,(mask[mx]===1)?fg:bg);
+    }
+  }
+}
 const patternController=createPatternController({
   stamp,
   stampPattern,
+  stampPatternOriginal,
+  // 供“调色笔”模式使用的平铺填充版本
+  stampPatternTiled,
   u8ToB64,
   b64ToU8,
   patternPickerEl,
@@ -951,7 +1040,8 @@ function render(frame,rect){
         if(val===0){
           data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
         }else{
-          const [r,g,b]=hexToRGB(colorMap[val]);
+          const idx=resolveColorIndexFromValue(val);
+          const [r,g,b]=hexToRGB(colorMap[idx]);
           data[o]=r; data[o+1]=g; data[o+2]=b; data[o+3]=255;
         }
       }
@@ -965,7 +1055,8 @@ function render(frame,rect){
     if(val===0){
       data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
     }else{
-      const [r,g,b]=hexToRGB(colorMap[val]);
+      const idx=resolveColorIndexFromValue(val);
+      const [r,g,b]=hexToRGB(colorMap[idx]);
       data[o]=r; data[o+1]=g; data[o+2]=b; data[o+3]=255;
     }
   }
@@ -1243,7 +1334,8 @@ function renderPreview(){
       if(val===0){
         data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
       }else{
-        const [r,g,b]=hexToRGB(colorMap[val]);
+        const idx=resolveColorIndexFromValue(val);
+        const [r,g,b]=hexToRGB(colorMap[idx]);
         data[o]=r; data[o+1]=g; data[o+2]=b; data[o+3]=255;
       }
     }
@@ -1835,9 +1927,12 @@ const LAYER_THUMB_H=52;
 let layerDrag=null;
 let layerJustDraggedUntil=0;
 function buildColorRgbCache(){
+  // 预构建渲染所需的 RGB 查色表：
+  // 对于别名值 52~81，会先折算到 1~16 再取色
   const cache=new Array((MAX_COLOR_INDEX|0)+1);
   for(let i=1;i<cache.length;i++){
-    const hex=colorMap[i];
+    const realIndex=resolveColorIndexFromValue(i);
+    const hex=colorMap[realIndex];
     if(hex) cache[i]=hexToRGB(hex);
   }
   return cache;
@@ -1858,7 +1953,7 @@ function renderLayerThumb(canvasEl,frame,rgbCache){
       if(val===0){
         data[o]=0; data[o+1]=0; data[o+2]=0; data[o+3]=0;
       }else{
-        const rgb=rgbCache[val] || hexToRGB(colorMap[val] || '#000000');
+        const rgb=rgbCache[val] || hexToRGB(colorMap[resolveColorIndexFromValue(val)] || '#000000');
         data[o]=rgb[0]; data[o+1]=rgb[1]; data[o+2]=rgb[2]; data[o+3]=255;
       }
     }
@@ -3835,6 +3930,7 @@ function setAdvancedMode(next){
     syncWigglyThemeButtons();
     syncWigglyThemeAdvancedVisibility();
     syncWigglyCanvasViewport();
+    syncWigglyActiveStates(currentTool,paletteValue);
   }
 }
 function toggleAdvancedMode(){
@@ -4931,6 +5027,46 @@ function createPaletteButton(value){
   });
   return btn;
 }
+// 供 wiggly 主题直接设置调色值使用（无需依赖 1~16 的按钮存在）
+// 支持 1~16 与 52~81（deck 别名值），并同步工具与活跃状态
+let wigglyMarkerBrush=null;
+let wigglyMarkerBrushPlaceholder=0;
+window.setMarkerBrushFromTheme=async function(placeholderIndex){
+  const idx=Number(placeholderIndex)||0;
+  if(!isWigglyUiTheme()) return;
+  if(!wigglyThemeApi || typeof wigglyThemeApi.getDeckAssetBrush!=='function') return;
+  const brush=await wigglyThemeApi.getDeckAssetBrush(idx);
+  if(!brush) return;
+  wigglyMarkerBrush=brush;
+  wigglyMarkerBrushPlaceholder=idx;
+};
+// 主题入口：设置当前调色值，并在需要时启用 deck 画笔形状作为调色笔画刷
+window.setPaletteFromTheme=async function(value){
+  const v=Number(value)||0;
+  if(v<=0) return;
+  if(isWigglyUiTheme() && patternController && typeof patternController.setActiveOverrideBrush==='function'){
+    if(v>=52 && v<=81){
+      const pixIndex=2+(v-52);
+      const brush=(wigglyThemeApi && typeof wigglyThemeApi.getDeckPatternBrush==='function')
+        ? await wigglyThemeApi.getDeckPatternBrush(pixIndex)
+        : null;
+      if(brush){
+        patternController.setActiveOverrideBrush(brush,{ valOverride:2 });
+      }else{
+        patternController.setActiveOverrideBrush(null);
+      }
+    }else{
+      patternController.setActiveOverrideBrush(null);
+    }
+  }
+  const changed=(currentTool!=='palette') || (paletteValue!==v);
+  paletteValue=v;
+  setTool('palette');
+  if(changed) playSound('pick') || playSound('click');
+  if(isWigglyUiTheme() && typeof syncWigglyActiveStates==='function'){
+    syncWigglyActiveStates(currentTool,paletteValue);
+  }
+};
 paletteButtons=[];
 for(let i=1;i<=BASE_COLOR_COUNT;i++){
   const btn=createPaletteButton(i);

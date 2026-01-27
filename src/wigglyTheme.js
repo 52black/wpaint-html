@@ -15,6 +15,13 @@ export function createWigglyTheme(deps){
     onRequestReturnAfterColor,
     onRequestReturnAfterCrop,
     onSetCanvasSize,
+    onGetToolSize,
+    onSetToolSize,
+    onGetJitterOn,
+    onGetJitterLevel,
+    onSetJitterLevel,
+    onGetJitterDelayMs,
+    onSetJitterDelayMs,
   }=deps;
   const ADVANCED_HIDE_NAMES=new Set([
     'hi34','hi22','hi23','hi8','hi5','hi19',
@@ -38,10 +45,21 @@ export function createWigglyTheme(deps){
     ['button1','exportGif'],
     ['toggleWiggle','jitterOn'],
     ['gifImportBtn','importGif'],
+    ['eraseLinesOnly','eraseOnlyOutline'],
+    ['eraseColorsOnly','eraseOnlyEraser'],
   ]);
   const WIGGLY_COLOR_IDS=[];
   for(let i=32;i<=47;i++) WIGGLY_COLOR_IDS.push(`hi${i}`);
-  const WIGGLY_COLOR_VALUE_MAP=new Map(WIGGLY_COLOR_IDS.map((id,idx)=>[id,idx+1]));
+  // 除了 32~47（映射到 1~16 的基础调色），也允许 deck 中的 2~31 作为“别名颜色”
+  // 点击这些别名颜色时，设置画笔值为 52~81（稍后在渲染阶段折算为 1~16）
+  const WIGGLY_ALIAS_COLOR_IDS=[];
+  for(let i=2;i<=31;i++) WIGGLY_ALIAS_COLOR_IDS.push(`hi${i}`);
+  const WIGGLY_COLOR_VALUE_MAP=new Map([
+    // 基础 16 色：hi32..hi47 -> 1..16
+    ...WIGGLY_COLOR_IDS.map((id,idx)=>[id,idx+1]),
+    // 别名 30 色：hi2..hi31 -> 52..81
+    ...WIGGLY_ALIAS_COLOR_IDS.map((id,idx)=>[id,52+idx]),
+  ]);
   const WIGGLY_TOOL_WIDGETS=new Map([
     ['pencil','pencil'],
     ['pen','pen'],
@@ -53,16 +71,19 @@ export function createWigglyTheme(deps){
   const KEEP_BUTTON_NAMES=new Set([
     'button1','button2','button3','button4','button5','button6',
     'redo','obliterate',
-    'toggleWiggle','gifImportBtn','dd','dither','rescale','eraseLinesOnly','eraseColorsOnly',
+    'toggleWiggle','gifImportBtn','eraseLinesOnly','eraseColorsOnly',
   ]);
   const ADVANCED_SHOW_NAMES=new Set([
     'button6',
-    'dd','field2','slider1','field3','slider2','speedLabel','speedSlider',
-    'gifImportBtn','dither','rescale','eraseLinesOnly','eraseColorsOnly',
-    'field4','slider3','field5',
+    'toggleWiggle',
+    'field2','slider1','speedLabel','speedSlider',
+    'gifImportBtn','eraseLinesOnly','eraseColorsOnly',
+    'field3','slider2',
+    'field4','slider3',
+    'field5','slider4',
   ]);
   const ALWAYS_SHOW_NAMES=new Set([
-    'pencil','pen','Blobby','StippleTiny','SoftLrg',
+    'pencil','pen','Blobby','StippleTiny','SoftLrg','eraser',
   ]);
   const WIGGLY_THEME_ASSETS_URL=new URL('../color5.assets.json',import.meta.url).href;
   const WIGGLY_THEME_DECK_URL=new URL('../color5-full-nodata.deck',import.meta.url).href;
@@ -75,10 +96,28 @@ export function createWigglyTheme(deps){
   let wigglyPatternCache=null;
   let wigglyDimsRect=null;
   let wigglyCanvasSizeKey='';
+  const wigglyAssetBrushCache=new Map();
+  let markerShapeSlot=0;
+  const MARKER_SHAPE_ASSET_FIRST=42;
+  const MARKER_SHAPE_ASSET_LAST=53;
   let canvasViewportHomeStyle=null;
   let canvasViewportRestoreApplied=false;
   const canvasViewportHomeParent=canvasViewportEl ? canvasViewportEl.parentElement : null;
   const canvasViewportHomeNext=canvasViewportEl ? canvasViewportEl.nextSibling : null;
+  let lastTool='';
+  const TOOL_THICKNESS_WIDGETS=new Map([
+    ['pencil',['field3','slider2']],
+    ['pen',['field4','slider3']],
+    ['eraser',['field5','slider4']],
+  ]);
+  function dispatchInput(el){
+    if(!el) return;
+    el.dispatchEvent(new Event('input',{ bubbles:true }));
+  }
+  function dispatchChange(el){
+    if(!el) return;
+    el.dispatchEvent(new Event('change',{ bubbles:true }));
+  }
   async function loadWigglyAssets(){
   if(wigglyAssetsPromise) return wigglyAssetsPromise;
   wigglyAssetsPromise=(async ()=>{
@@ -168,6 +207,8 @@ export function createWigglyTheme(deps){
     if(data && Array.isArray(data.pos) && Array.isArray(data.size)){
       const type=String(data.type||'').trim() || 'widget';
       const imageIndex=extractImageIndexFromWidget(data);
+      const interval=Array.isArray(data.interval) ? data.interval.map((n)=>Number(n)||0) : null;
+      const valueNum=(typeof data.value==='number') ? Number(data.value) : null;
       widgets.push({
         id:name,
         type,
@@ -177,6 +218,8 @@ export function createWigglyTheme(deps){
         style:data.style||'',
         text:typeof data.text==='string'?data.text:'',
         value:typeof data.value==='string'?data.value:'',
+        interval,
+        valueNum,
         imageIndex,
       });
     }
@@ -300,6 +343,59 @@ export function createWigglyTheme(deps){
   wigglyPaletteCache=getWigglyPaletteFromColorMap();
   return wigglyPaletteCache;
 }
+
+  async function getDeckAssetBrush(placeholderIndex){
+    const idxNum=Number(placeholderIndex)||0;
+    if(idxNum<0) return null;
+    if(wigglyAssetBrushCache.has(idxNum)) return wigglyAssetBrushCache.get(idxNum) || null;
+    const assets=await loadWigglyAssets();
+    const raw=assets[idxNum];
+    if(typeof raw!=='string' || !raw.startsWith('%%IMG')){
+      wigglyAssetBrushCache.set(idxNum,null);
+      return null;
+    }
+    const decoded=decodeDeckImageString(raw);
+    if(!decoded || !(decoded.w>0 && decoded.h>0) || !(decoded.pix instanceof Uint8Array)){
+      wigglyAssetBrushCache.set(idxNum,null);
+      return null;
+    }
+    const w=decoded.w|0;
+    const h=decoded.h|0;
+    const mask=new Uint8Array((w*h)|0);
+    for(let i=0;i<mask.length;i++){
+      const v=decoded.pix[i]&255;
+      mask[i]=v?1:0;
+    }
+    const brush={ w, h, mask };
+    wigglyAssetBrushCache.set(idxNum,brush);
+    return brush;
+  }
+  async function updateMarkerSizesDisplay(placeholderIndex){
+    if(!containerEl) return;
+    const markerEl=containerEl.querySelector('.wiggly-widget[data-name="markerSizes"]');
+    if(!markerEl) return;
+    const shapeEl=markerEl.querySelector('.wiggly-marker-shape');
+    if(!shapeEl) return;
+    const idx=Number(placeholderIndex)||0;
+    const wanted=String(idx);
+    markerEl.dataset.markerPlaceholder=wanted;
+    const [url,brush]=await Promise.all([
+      getWigglyImageUrl(idx,{ transparentZero:true }),
+      getDeckAssetBrush(idx),
+    ]);
+    if(markerEl.dataset.markerPlaceholder!==wanted) return;
+    if(!url){
+      shapeEl.style.removeProperty('background-image');
+      return;
+    }
+    shapeEl.style.backgroundImage=`url("${url}")`;
+    if(brush && brush.w>0 && brush.h>0){
+      shapeEl.style.backgroundSize=`${brush.w|0}px ${brush.h|0}px`;
+    }else{
+      shapeEl.style.removeProperty('background-size');
+    }
+    shapeEl.style.imageRendering='pixelated';
+  }
   function clearWigglyThemeWidgets(){
   if(!containerEl) return;
   const nodes=[...containerEl.querySelectorAll('.wiggly-widget')];
@@ -325,26 +421,185 @@ export function createWigglyTheme(deps){
   function markClickable(el){
     if(el) el.classList.add('wiggly-clickable');
   }
+  function setWidgetChecked(el,on){
+    if(!el) return;
+    el.classList.toggle('is-checked',Boolean(on));
+  }
+  function setWidgetPressed(el,on){
+    if(!el) return;
+    el.classList.toggle('is-pressed',Boolean(on));
+  }
+  function getSliderParts(el){
+    if(!el) return { track:null, thumb:null };
+    const track=el.querySelector('.wiggly-slider-track');
+    const thumb=el.querySelector('.wiggly-slider-thumb');
+    return { track, thumb };
+  }
+  function updateSliderThumb(el,value,min,max){
+    if(!el) return;
+    const { thumb }=getSliderParts(el);
+    if(!thumb) return;
+    const a=Number(min);
+    const b=Number(max);
+    const v=Number(value);
+    const denom=(b-a);
+    const t=(denom>0) ? ((v-a)/denom) : 0;
+    const pct=Math.max(0,Math.min(1,t))*100;
+    thumb.style.left=`${pct}%`;
+  }
+  function setSliderValue(el,value){
+    if(!el) return;
+    const min=Number(el.dataset.min);
+    const max=Number(el.dataset.max);
+    const v=Number(value);
+    if(Number.isFinite(v)) el.dataset.value=String(v);
+    updateSliderThumb(el,v,min,max);
+  }
+  function mapSlider1ToJitterLevel(v){
+    const raw=Number(v)||0;
+    return Math.max(0,Math.min(10,Math.round(raw/2)));
+  }
+  function mapJitterLevelToSlider1(level){
+    const raw=Math.max(0,Math.min(10,Number(level)||0));
+    return Math.max(1,Math.min(20,Math.round(raw*2)));
+  }
+  function mapSpeedSliderToDelayMs(v){
+    const raw=Math.max(1,Math.min(20,Number(v)||1));
+    return Math.max(20,Math.round(((raw/5)*120)/10)*10);
+  }
+  function mapDelayMsToSpeedSlider(ms){
+    const raw=Math.max(20,Number(ms)||120);
+    return Math.max(1,Math.min(20,Math.round((raw/120)*5)));
+  }
+  function readHostCheckbox(id){
+    const el=document.getElementById(id);
+    return Boolean(el && el.checked);
+  }
+  function readHostNumberValue(id,fallback){
+    const el=document.getElementById(id);
+    const v=Number(el && el.value);
+    return Number.isFinite(v) ? v : fallback;
+  }
+  function applySliderToHost(widgetId,value){
+    const v=Number(value)||0;
+    if(widgetId==='slider1'){
+      const target=document.getElementById('jitter');
+      if(target){
+        target.value=String(mapSlider1ToJitterLevel(v));
+        dispatchInput(target);
+      }
+      return;
+    }
+    if(widgetId==='speedSlider'){
+      const target=document.getElementById('jitterDelay');
+      if(target){
+        target.value=String(mapSpeedSliderToDelayMs(v));
+        dispatchChange(target);
+      }
+      return;
+    }
+    if(widgetId==='slider2' || widgetId==='slider3' || widgetId==='slider4'){
+      const target=document.getElementById('size');
+      if(target){
+        target.value=String(Math.max(1,Math.round(v)));
+        dispatchInput(target);
+      }
+      return;
+    }
+  }
+  function getSliderValueFromHost(widgetId){
+    if(widgetId==='slider1'){
+      const lvl=readHostNumberValue('jitter',1);
+      return mapJitterLevelToSlider1(lvl);
+    }
+    if(widgetId==='speedSlider'){
+      const ms=readHostNumberValue('jitterDelay',120);
+      return mapDelayMsToSpeedSlider(ms);
+    }
+    if(widgetId==='slider2' || widgetId==='slider3' || widgetId==='slider4'){
+      return readHostNumberValue('size',1);
+    }
+    return Number.NaN;
+  }
+  function bindWigglySliderAction(el,widget){
+    if(!el || !widget || widget.type!=='slider') return;
+    if(!Array.isArray(widget.interval) || widget.interval.length<2) return;
+    const min=Number(widget.interval[0]);
+    const max=Number(widget.interval[1]);
+    if(!Number.isFinite(min) || !Number.isFinite(max) || !(max>min)) return;
+    el.dataset.min=String(min);
+    el.dataset.max=String(max);
+    el.dataset.value=String(Number(widget.valueNum)||min);
+    updateSliderThumb(el,Number(el.dataset.value),min,max);
+    markClickable(el);
+    const calcValue=(clientX)=>{
+      const { track }=getSliderParts(el);
+      const r=(track || el).getBoundingClientRect();
+      const x=Math.max(0,Math.min(r.width,(Number(clientX)||0)-r.left));
+      const t=(r.width>0) ? (x/r.width) : 0;
+      const raw=min+t*(max-min);
+      return Math.round(raw);
+    };
+    let active=false;
+    const move=(e)=>{
+      if(!active) return;
+      e.preventDefault();
+      const next=calcValue(e.clientX);
+      setSliderValue(el,next);
+      applySliderToHost(widget.id,next);
+    };
+    const up=()=>{
+      if(!active) return;
+      active=false;
+      window.removeEventListener('pointermove',move,{ capture:true });
+      window.removeEventListener('pointerup',up,{ capture:true });
+    };
+    el.addEventListener('pointerdown',(e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      active=true;
+      setSliderValue(el,calcValue(e.clientX));
+      applySliderToHost(widget.id,Number(el.dataset.value));
+      window.addEventListener('pointermove',move,{ capture:true });
+      window.addEventListener('pointerup',up,{ capture:true });
+    });
+  }
   function bindWigglyButtonAction(el,widget){
     if(!el || !widget) return;
     if(widget.id==='button5' || widget.id==='button6') return;
     if(widget.id==='target' || widget.id==='dims') return;
     if(widget.type!=='button' && widget.type!=='contraption') return;
+    // 支持两类调色部件：
+    // - hi32..hi47：点击后选择 1..16 的基础调色
+    // - hi2..hi31：点击后选择 52..81 的别名值（渲染时折算回 1..16）
     const colorValue=WIGGLY_COLOR_VALUE_MAP.get(widget.id);
     if(colorValue!=null){
       markClickable(el);
       el.addEventListener('click',(e)=>{
         e.preventDefault();
         e.stopPropagation();
-        const target=document.querySelector(`.palette-btn[data-value="${colorValue}"]`);
-        console.log('[wiggly] click',widget.id,'->',`palette ${colorValue}`,'targetFound=',Boolean(target));
-        if(target && !target.disabled) target.click();
+        const setter=window && window.setPaletteFromTheme;
+        if(typeof setter==='function'){
+          console.log('[wiggly] click',widget.id,'->',`palette ${colorValue}`,'targetFound=',false);
+          setter(colorValue);
+        }else{
+          const target=document.querySelector(`.palette-btn[data-value="${colorValue}"]`);
+          console.log('[wiggly] click',widget.id,'->',`palette ${colorValue}`,'targetFound=',Boolean(target));
+          if(target && !target.disabled) target.click();
+        }
       });
       return;
     }
     const targetId=resolveWigglyTargetId(widget.id);
     if(!targetId) return;
     markClickable(el);
+    if(el.classList.contains('is-invisible-btn')){
+      const clear=()=>setWidgetPressed(el,false);
+      el.addEventListener('pointerdown',()=>setWidgetPressed(el,true));
+      el.addEventListener('pointerup',clear);
+      el.addEventListener('pointercancel',clear);
+      el.addEventListener('pointerleave',clear);
+    }
     el.addEventListener('click',(e)=>{
       e.preventDefault();
       e.stopPropagation();
@@ -362,9 +617,42 @@ export function createWigglyTheme(deps){
         return;
       }
       if(target && !target.disabled) target.click();
+      setTimeout(()=>syncWigglyControlStates(lastTool),0);
     });
   }
+  function syncWigglyToolThicknessVisibility(tool){
+    if(!containerEl) return;
+    if(!containerEl.classList.contains('advanced')) return;
+    const ids=[];
+    for(const pair of TOOL_THICKNESS_WIDGETS.values()){
+      for(const id of pair) ids.push(id);
+    }
+    const activePair=TOOL_THICKNESS_WIDGETS.get(tool||'') || null;
+    for(const id of ids){
+      const node=containerEl.querySelector(`.wiggly-widget[data-name="${id}"]`);
+      if(!node) continue;
+      if(activePair && activePair.includes(id)) node.style.display='';
+      else node.style.display='none';
+    }
+  }
+  function syncWigglyControlStates(tool){
+    if(!containerEl) return;
+    const toggleEl=containerEl.querySelector('.wiggly-widget[data-name="toggleWiggle"]');
+    if(toggleEl) setWidgetChecked(toggleEl,readHostCheckbox('jitterOn'));
+    const eraseLinesEl=containerEl.querySelector('.wiggly-widget[data-name="eraseLinesOnly"]');
+    if(eraseLinesEl) setWidgetChecked(eraseLinesEl,readHostCheckbox('eraseOnlyOutline'));
+    const eraseColorsEl=containerEl.querySelector('.wiggly-widget[data-name="eraseColorsOnly"]');
+    if(eraseColorsEl) setWidgetChecked(eraseColorsEl,readHostCheckbox('eraseOnlyEraser'));
+    for(const id of ['slider1','speedSlider','slider2','slider3','slider4']){
+      const sliderEl=containerEl.querySelector(`.wiggly-widget[data-name="${id}"]`);
+      if(!sliderEl) continue;
+      const v=getSliderValueFromHost(id);
+      if(Number.isFinite(v)) setSliderValue(sliderEl,v);
+    }
+    syncWigglyToolThicknessVisibility(tool);
+  }
   function syncWigglyActiveStates(tool,paletteValue){
+    lastTool=String(tool||'');
     if(!containerEl) return;
     const nodes=[...containerEl.querySelectorAll('.wiggly-widget')];
     for(const node of nodes) node.classList.remove('is-active');
@@ -374,13 +662,23 @@ export function createWigglyTheme(deps){
       if(toolEl) toolEl.classList.add('is-active');
     }
     if((tool||'')==='palette'){
-      const idx=(Number(paletteValue)||0)-1;
-      const colorId=WIGGLY_COLOR_IDS[idx];
-      if(colorId){
-        const colorEl=containerEl.querySelector(`.wiggly-widget[data-name="${colorId}"]`);
+      // 当 paletteValue 为 1..16，激活 hi32..hi47；
+      // 当 paletteValue 为 52..81，激活 hi2..hi31。
+      const v=Number(paletteValue)||0;
+      let activeId='';
+      if(v>=1 && v<=16){
+        const idx=v-1;
+        activeId=WIGGLY_COLOR_IDS[idx] || '';
+      }else if(v>=52 && v<=81){
+        const aliasNum=2+(v-52); // 52->hi2, 81->hi31
+        activeId=`hi${aliasNum}`;
+      }
+      if(activeId){
+        const colorEl=containerEl.querySelector(`.wiggly-widget[data-name="${activeId}"]`);
         if(colorEl) colorEl.classList.add('is-active');
       }
     }
+    syncWigglyControlStates(tool);
   }
   function moveCanvasViewportToContainer(){
     if(!canvasViewportEl || !containerEl) return;
@@ -448,15 +746,19 @@ export function createWigglyTheme(deps){
     if(widget.show) el.dataset.show=widget.show;
     if(widget.text) el.dataset.text=widget.text;
     el.dataset.advanced=widget.show==='none' ? '1' : '0';
-    if(widget.imageIndex!=null && widget.imageIndex>=32 && widget.imageIndex<=47){
+    const hiMatch=/^hi(\d+)$/.exec(widget.id);
+    const hiNum=hiMatch ? (Number(hiMatch[1])||0) : 0;
+    if(hiNum>=2 && hiNum<=47){
       el.dataset.palette='1';
     }else{
       el.dataset.palette='0';
     }
-    if(widget.imageIndex!=null){
+    if(widget.imageIndex!=null && widget.id!=='markerSizes'){
       el.dataset.imgIndex=String(widget.imageIndex);
       el.classList.add('has-image');
     }
+    const isInvisibleButton=(widget.style==='invisible') || (widget.type==='button' && !widget.text && !widget.value && widget.imageIndex==null && widget.style!=='check');
+    if(isInvisibleButton) el.classList.add('is-invisible-btn');
     if(widget.id==='button5' && typeof onToggleAdvanced==='function'){
       markClickable(el);
       el.addEventListener('click',(e)=>{
@@ -473,12 +775,50 @@ export function createWigglyTheme(deps){
         onDisableAdvanced();
       });
     }
+    if(widget.id==='markerSizes'){
+      markClickable(el);
+      const cover=document.createElement('div');
+      cover.className='wiggly-marker-cover';
+      cover.setAttribute('aria-hidden','true');
+      const shape=document.createElement('div');
+      shape.className='wiggly-marker-shape';
+      shape.setAttribute('aria-hidden','true');
+      el.appendChild(cover);
+      el.appendChild(shape);
+      if(wigglyThemeEl){
+        const saved=Number(wigglyThemeEl.dataset.markerShapeSlot);
+        if(Number.isFinite(saved) && saved>=0) markerShapeSlot=saved|0;
+      }
+      const getSlotCount=()=>Math.max(0,(MARKER_SHAPE_ASSET_LAST-MARKER_SHAPE_ASSET_FIRST+1)|0);
+      el.addEventListener('click',(e)=>{
+        e.preventDefault();
+        e.stopPropagation();
+        const rect=el.getBoundingClientRect();
+        const localX=(e.clientX-rect.left);
+        const ratio=(rect.width>0)?(localX/rect.width):0.5;
+        const count=getSlotCount();
+        if(count<=0) return;
+        let delta=0;
+        if(ratio<=0.2) delta=-1;
+        else if(ratio>=0.8) delta=1;
+        else return;
+        markerShapeSlot=((markerShapeSlot+delta)%count+count)%count;
+        if(wigglyThemeEl) wigglyThemeEl.dataset.markerShapeSlot=String(markerShapeSlot|0);
+        const placeholder=(MARKER_SHAPE_ASSET_FIRST+markerShapeSlot)|0;
+        const setter=window && window.setMarkerBrushFromTheme;
+        if(typeof setter==='function'){
+          void setter(placeholder);
+        }
+        void updateMarkerSizesDisplay(placeholder);
+      });
+    }
     bindWigglyButtonAction(el,widget);
     if(widget.style==='check'){
       el.classList.add('check');
       const box=document.createElement('span');
       box.className='wiggly-check';
       el.appendChild(box);
+      if(widget.valueNum!=null) setWidgetChecked(el,Boolean(widget.valueNum));
     }
     if(widget.text){
       const text=document.createElement('span');
@@ -496,10 +836,9 @@ export function createWigglyTheme(deps){
       thumb.className='wiggly-slider-thumb';
       el.appendChild(track);
       el.appendChild(thumb);
+      bindWigglySliderAction(el,widget);
     }
-    if(widget.show==='none' || widget.style==='invisible'){
-      el.classList.add('is-ghost');
-    }
+    if(widget.show==='none') el.classList.add('is-ghost');
     if(ADVANCED_HIDE_NAMES.has(widget.id)) el.dataset.advHide='1';
     containerEl.appendChild(el);
   }
@@ -537,8 +876,9 @@ export function createWigglyTheme(deps){
   const isAdvanced=Boolean(containerEl && containerEl.classList.contains('advanced'));
   const advancedEl=containerEl.querySelector('.wiggly-widget[data-name="button5"]');
   const backEl=containerEl.querySelector('.wiggly-widget[data-name="button6"]');
-  if(advancedEl) advancedEl.style.display=isColorMode ? 'none' : (isAdvanced ? 'none' : '');
-  if(backEl) backEl.style.display=isColorMode ? 'none' : (isAdvanced ? '' : 'none');
+  const showBack=(!isColorMode && isAdvanced);
+  if(backEl) backEl.style.display=showBack ? '' : 'none';
+  if(advancedEl) advancedEl.style.display=(!isColorMode && !showBack) ? '' : 'none';
 }
   function syncWigglyCanvasViewport(){
     if(!canvasViewportEl) return;
@@ -573,9 +913,16 @@ export function createWigglyTheme(deps){
   function syncWigglyThemeAdvancedVisibility(){
   if(!containerEl) return;
     const isAdvanced=Boolean(containerEl && containerEl.classList.contains('advanced'));
+    const isColorMode=Boolean(containerEl && containerEl.classList.contains('color-mode'));
   const nodes=[...containerEl.querySelectorAll('.wiggly-widget')];
     for(const node of nodes){
       const name=node.dataset.name || '';
+      if(name==='button5' || name==='button6'){
+        const showBack=(!isColorMode && isAdvanced);
+        if(name==='button6') node.style.display=showBack ? '' : 'none';
+        if(name==='button5') node.style.display=(!isColorMode && !showBack) ? '' : 'none';
+        continue;
+      }
       if(ALWAYS_HIDE_NAMES.has(name)){
         node.remove();
         continue;
@@ -626,15 +973,32 @@ export function createWigglyTheme(deps){
       if(stageEl) stageEl.style.backgroundImage=`url("${bgUrl}")`;
       if(stageEl) stageEl.style.backgroundSize='100% 100%';
       if(stageEl) stageEl.style.backgroundRepeat='no-repeat';
+      if(stageEl) stageEl.style.imageRendering='pixelated';
     }
   }
   const nodes=[...containerEl.querySelectorAll('.wiggly-widget[data-img-index]')];
   for(const node of nodes){
+    if(node && node.dataset && node.dataset.name==='markerSizes'){
+      node.style.removeProperty('background-image');
+      continue;
+    }
     const placeholder=Number(node.dataset.imgIndex);
     if(!Number.isFinite(placeholder)) continue;
     const url=await getWigglyImageUrl(placeholder,{ transparentZero:true });
     if(!url) continue;
     node.style.backgroundImage=`url("${url}")`;
+    node.style.imageRendering='pixelated';
+  }
+  const savedSlot=Number(wigglyThemeEl.dataset.markerShapeSlot);
+  const slot=Number.isFinite(savedSlot) && savedSlot>=0 ? (savedSlot|0) : (markerShapeSlot|0);
+  const count=Math.max(0,(MARKER_SHAPE_ASSET_LAST-MARKER_SHAPE_ASSET_FIRST+1)|0);
+  if(count>0){
+    markerShapeSlot=((slot%count)+count)%count;
+    wigglyThemeEl.dataset.markerShapeSlot=String(markerShapeSlot|0);
+    const placeholder=(MARKER_SHAPE_ASSET_FIRST+markerShapeSlot)|0;
+    void updateMarkerSizesDisplay(placeholder);
+    const setter=window && window.setMarkerBrushFromTheme;
+    if(typeof setter==='function') void setter(placeholder);
   }
 }
   function applyWigglyTheme(){
@@ -645,12 +1009,30 @@ export function createWigglyTheme(deps){
     if(stageEl){
       stageEl.style.removeProperty('background-size');
       stageEl.style.removeProperty('background-repeat');
+      stageEl.style.removeProperty('image-rendering');
     }
     syncWigglyCanvasViewport();
     return;
   }
   void applyWigglyThemeImages();
 }
+  // 暴露 deck 图案为 8x8 画笔掩码，供主程序“调色笔”使用
+  async function getDeckPatternBrush(pixIndex){
+    await loadWigglyPatterns();
+    const pat=wigglyPatternCache;
+    const idxNum=Number(pixIndex)||0;
+    if(!pat || pat.w!==8 || !pat.pix || !pat.pix.length) return null;
+    if(idxNum<2 || idxNum>31) return null;
+    const mask=new Uint8Array(8*8);
+    for(let py=0;py<8;py++){
+      for(let px=0;px<8;px++){
+        const i=px+(8*py)+(64*(idxNum|0));
+        const v=(i>=0 && i<pat.pix.length) ? (pat.pix[i]&1) : 0;
+        mask[py*8+px]=v?1:0;
+      }
+    }
+    return { w:8, h:8, mask };
+  }
   async function getWigglyDimsSize(){
     if(wigglyDimsRect && wigglyDimsRect.w>0 && wigglyDimsRect.h>0){
       return [wigglyDimsRect.w|0,wigglyDimsRect.h|0];
@@ -692,5 +1074,7 @@ export function createWigglyTheme(deps){
     syncWigglyCanvasViewport,
     syncWigglyThemeAdvancedVisibility,
     getWigglyDimsSize,
+    getDeckPatternBrush,
+    getDeckAssetBrush,
   };
 }
