@@ -23,8 +23,10 @@ body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="target"] 
 body[data-ui-theme="wigglypaint"] .stage,
 body[data-ui-theme="wigglypaint"] .wiggly-widget.has-image,
 body[data-ui-theme="wigglypaint"] .wiggly-theme { image-rendering: crisp-edges; image-rendering: pixelated; }
-body[data-ui-theme="wigglypaint"] .canvas,
-body[data-ui-theme="wigglypaint"] .canvas-bg { image-rendering: crisp-edges; image-rendering: pixelated; }
+body[data-ui-theme="wigglypaint"]:not([data-canvas-smooth="1"]) .canvas,
+body[data-ui-theme="wigglypaint"]:not([data-canvas-smooth="1"]) .canvas-bg { image-rendering: crisp-edges; image-rendering: pixelated; }
+body[data-ui-theme="wigglypaint"][data-canvas-smooth="1"] .canvas,
+body[data-ui-theme="wigglypaint"][data-canvas-smooth="1"] .canvas-bg { image-rendering: auto; }
 body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="button6"]{
   background: rgba(17,17,17,.92);
   color: #fff;
@@ -87,6 +89,10 @@ body[data-ui-theme="wigglypaint"] .jitter-panel { display: none !important; }
 .canvas-viewport { position: absolute; top: 0; left: 0; width: 360px; height: 340px; border: 1px solid #ccc; background: transparent; z-index: 2; overflow: hidden; touch-action: none; }
 .canvas-bg { position: absolute; top: 0; left: 0; width: 360px; height: 340px; z-index: 1; }
 .canvas { position: absolute; top: 0; left: 0; width: 360px; height: 340px; border: none; background: transparent; z-index: 2; touch-action: none; }
+body:not([data-canvas-smooth="1"]) .canvas,
+body:not([data-canvas-smooth="1"]) .canvas-bg { image-rendering: crisp-edges; image-rendering: pixelated; }
+body[data-canvas-smooth="1"] .canvas,
+body[data-canvas-smooth="1"] .canvas-bg { image-rendering: auto; }
 .tool-btn { position: absolute; z-index: 2; padding: 6px 10px; border: 1px solid rgba(0,0,0,.15); border-radius: 10px; background: rgba(255,255,255,.92); color: #111; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.08); backdrop-filter: blur(6px); }
 .tool-btn:hover { background: rgba(255,255,255,.98); }
 .tool-btn:active { transform: translateY(1px); }

@@ -295,6 +295,25 @@ const canvas=document.getElementById('drawing');
 const canvasViewportEl=document.getElementById('canvasViewport');
 const canvasBgEl=document.getElementById('canvasBg');
 const ctx=canvas.getContext('2d');
+const CANVAS_SMOOTHING_STORAGE_KEY='wpaint.canvasSmoothing.v1';
+let canvasSmoothing=false;
+{
+  let saved=null;
+  try{ saved=localStorage.getItem(CANVAS_SMOOTHING_STORAGE_KEY); }catch{}
+  if(saved==='1' || saved==='true') canvasSmoothing=true;
+}
+function setCanvasSmoothing(enabled){
+  canvasSmoothing=Boolean(enabled);
+  try{
+    localStorage.setItem(CANVAS_SMOOTHING_STORAGE_KEY,canvasSmoothing?'1':'0');
+  }catch{}
+  if(document.body){
+    if(canvasSmoothing) document.body.setAttribute('data-canvas-smooth','1');
+    else document.body.removeAttribute('data-canvas-smooth');
+  }
+  ctx.imageSmoothingEnabled=canvasSmoothing;
+}
+setCanvasSmoothing(canvasSmoothing);
 let W=canvas.width,H=canvas.height;
 // 支持扩展的“调色板值”：除了 0、1~16、17~21（勾线工具）之外，
 // 还允许 52~81 作为“别名值”，用于从 deck 中的颜色 2~31 映射过来。
@@ -497,6 +516,9 @@ let bgCropDragStartX=0;
 let bgCropDragStartY=0;
 let bgCropDragStartOffX=0;
 let bgCropDragStartOffY=0;
+let bgCropTouchPoints=new Map();
+let bgCropPinchStartDist=0;
+let bgCropPinchStartZoom=100;
 const outlineColorStore=Array.from({length: MAX_COLOR_INDEX+1},()=>null);
 for(let i=OUTLINE_FIRST;i<=OUTLINE_LAST;i++){
   outlineColorStore[i]=colorMap[i] ?? colorMap[2];
@@ -2775,10 +2797,9 @@ function updateCanvasTouchGesture(){
   canvasViewRotation=rotation;
   canvasViewPanX=cx-vec.x;
   canvasViewPanY=cy-vec.y;
-  clampCanvasPan();
   if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(canvasViewScale*100));
   if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(canvasViewScale*100)}%`;
-  applyCanvasViewTransform();
+  applyCanvasViewTransform({ allowEmpty:true });
 }
 function endCanvasTouchGesture(){
   if(!canvasTouchGesture) return;
@@ -2937,10 +2958,9 @@ if(canvasViewportEl){
     canvasViewRotation=rotation;
     canvasViewPanX=cx-vec.x;
     canvasViewPanY=cy-vec.y;
-    clampCanvasPan();
     if(canvasZoomRangeEl) canvasZoomRangeEl.value=String(Math.round(canvasViewScale*100));
     if(canvasZoomValueEl) canvasZoomValueEl.textContent=`${Math.round(canvasViewScale*100)}%`;
-    applyCanvasViewTransform();
+    applyCanvasViewTransform({ allowEmpty:true });
     e.preventDefault();
     e.stopPropagation();
   },{capture:true,passive:false});
@@ -3191,7 +3211,7 @@ function setCanvasSize(newW,newH){
   H=newH|0;
   canvas.width=W;
   canvas.height=H;
-  ctx.imageSmoothingEnabled=false;
+  ctx.imageSmoothingEnabled=canvasSmoothing;
   canvas.style.width=`${W}px`;
   canvas.style.height=`${H}px`;
   if(canvasBgEl){
@@ -3699,30 +3719,24 @@ function clampCanvasViewScale(scale){
   const s=Number(scale)||1;
   return Math.max(0.5,Math.min(3,s));
 }
-function snapCanvasViewToDevicePixels(){
+function snapCanvasViewToDevicePixels({ allowEmpty=false }={}){
   if(!shouldSnapCanvasView()) return;
   const ui=(Number(stageUiScale)||1)||1;
   const dpr=getClampedDevicePixelRatio();
-  const minDevice=Math.max(1,Math.ceil(ui*0.5*dpr-1e-6));
-  const maxDevice=Math.max(minDevice,Math.floor(ui*3*dpr+1e-6));
-  let target=Math.round(ui*clampCanvasViewScale(canvasViewScale)*dpr);
-  if(target<minDevice) target=minDevice;
-  if(target>maxDevice) target=maxDevice;
-  const snappedTotal=target/dpr;
-  canvasViewScale=clampCanvasViewScale(snappedTotal/ui);
   const denom=ui*dpr;
   if(denom>0){
     canvasViewPanX=Math.round(canvasViewPanX*denom)/denom;
     canvasViewPanY=Math.round(canvasViewPanY*denom)/denom;
   }
-  clampCanvasPan();
+  if(!allowEmpty) clampCanvasPan();
   if(denom>0){
     canvasViewPanX=Math.round(canvasViewPanX*denom)/denom;
     canvasViewPanY=Math.round(canvasViewPanY*denom)/denom;
   }
+  if(!allowEmpty) clampCanvasPan();
 }
-function applyCanvasViewTransform(){
-  snapCanvasViewToDevicePixels();
+function applyCanvasViewTransform({ allowEmpty=false }={}){
+  snapCanvasViewToDevicePixels({ allowEmpty });
   syncCanvasZoomUI();
   const safeScale=(Number(canvasViewScale)||1)||1;
   const a=Number(canvasViewRotation)||0;
@@ -3743,27 +3757,31 @@ function updateCheckerboardScale(){
 onStageUiScaleChanged=()=>{
   applyCanvasViewTransform();
 };
-function setCanvasViewScale(scale){
+function setCanvasViewScaleAt(scale,anchorScreenX,anchorScreenY,{ allowEmpty=false }={}){
   const prev=canvasViewScale;
-  const next=Math.max(0.5,Math.min(3,Number(scale)||1));
+  const next=clampCanvasViewScale(scale);
+  const { vw, vh }=getCanvasViewportSize();
+  const ax=Number.isFinite(anchorScreenX) ? anchorScreenX : (vw/2);
+  const ay=Number.isFinite(anchorScreenY) ? anchorScreenY : (vh/2);
   if(next!==prev){
-    const { vw, vh }=getCanvasViewportSize();
-    const anchorScreenX=vw/2;
-    const anchorScreenY=vh/2;
     const baseView={ scale:prev, rotation:canvasViewRotation, panX:canvasViewPanX, panY:canvasViewPanY };
-    const anchorContent=screenToContent(anchorScreenX,anchorScreenY,baseView);
+    const anchorContent=screenToContent(ax,ay,baseView);
     canvasViewScale=next;
     const vec=contentToScreenNoPan(anchorContent.x,anchorContent.y,{ scale:next, rotation:canvasViewRotation, panX:0, panY:0 });
-    canvasViewPanX=Math.round(anchorScreenX-vec.x);
-    canvasViewPanY=Math.round(anchorScreenY-vec.y);
-    clampCanvasPan();
+    canvasViewPanX=ax-vec.x;
+    canvasViewPanY=ay-vec.y;
+    if(!allowEmpty) clampCanvasPan();
   }else{
     canvasViewScale=next;
   }
   syncCanvasZoomUI();
-  applyCanvasViewTransform();
+  applyCanvasViewTransform({ allowEmpty });
 }
-function clampCanvasPan(){
+function setCanvasViewScale(scale){
+  setCanvasViewScaleAt(scale);
+}
+function clampCanvasPan({ allowEmpty=false }={}){
+  if(allowEmpty) return;
   const { vw, vh }=getCanvasViewportSize();
   if(!Number.isFinite(vw) || !Number.isFinite(vh) || vw<=0 || vh<=0) return;
   const bbox=computeContentBBoxNoPan(canvasViewScale,canvasViewRotation);
@@ -3929,6 +3947,39 @@ if(canvasPanModeEl){
 }
 setCanvasViewScale(1);
 setCanvasPanMode(false);
+if(canvasViewportEl){
+  canvasViewportEl.addEventListener('wheel',(e)=>{
+    if(containerEl && containerEl.classList.contains('color-mode')) return;
+    if(document.querySelector('.modal-overlay.is-open')) return;
+    const delta=(e.deltaY||0);
+    if(!delta) return;
+    const p=getViewportPosFromPointerEvent(e);
+    const ax=p.x;
+    const ay=p.y;
+    const step=e.shiftKey ? 20 : 10;
+    const nextPct=Math.round(canvasViewScale*100)+(delta>0?-step:step);
+    setCanvasViewScaleAt(nextPct/100,ax,ay,{ allowEmpty:true });
+    e.preventDefault();
+  },{ passive:false });
+}
+window.addEventListener('keydown',(e)=>{
+  if(e.defaultPrevented) return;
+  if(containerEl && containerEl.classList.contains('color-mode')) return;
+  if(document.querySelector('.modal-overlay.is-open')) return;
+  const t=e.target;
+  if(t && (t.closest && t.closest('input,textarea,select,button,a,[contenteditable="true"]'))) return;
+  if(t && t.isContentEditable) return;
+  const key=e.key;
+  if(key!=='ArrowLeft' && key!=='ArrowRight' && key!=='ArrowUp' && key!=='ArrowDown') return;
+  const step=e.shiftKey ? 80 : 24;
+  if(key==='ArrowLeft') canvasViewPanX-=step;
+  if(key==='ArrowRight') canvasViewPanX+=step;
+  if(key==='ArrowUp') canvasViewPanY-=step;
+  if(key==='ArrowDown') canvasViewPanY+=step;
+  clampCanvasPan();
+  applyCanvasViewTransform();
+  e.preventDefault();
+});
 function getJitterSubDelayMs(i){
   return Math.max(20,Number(jitterSubDelay)||120);
 }
@@ -3989,6 +4040,7 @@ const settingsPageAboutEl=document.getElementById('settingsPageAbout');
 const settingsPageShortcutsEl=document.getElementById('settingsPageShortcuts');
 const soundEnabledEl=document.getElementById('soundEnabled');
 const numPadEnabledEl=document.getElementById('numPadEnabled');
+const canvasSmoothingEl=document.getElementById('canvasSmoothing');
 const fullscreenToggleEl=document.getElementById('fullscreenToggle');
 const fullscreenStateEl=document.getElementById('fullscreenState');
 const shortcutsListEl=document.getElementById('shortcutsList');
@@ -4396,6 +4448,12 @@ if(soundEnabledEl){
   soundEnabledEl.addEventListener('change',()=>{
     setSoundEnabled(soundEnabledEl.checked);
     if(!soundEnabled) stopStrokeSoundLoop();
+  });
+}
+if(canvasSmoothingEl){
+  canvasSmoothingEl.checked=Boolean(canvasSmoothing);
+  canvasSmoothingEl.addEventListener('change',()=>{
+    setCanvasSmoothing(canvasSmoothingEl.checked);
   });
 }
 
@@ -5745,6 +5803,9 @@ function closeBgCropModal(){
     try{ if(bgCropCanvasEl) bgCropCanvasEl.releasePointerCapture(bgCropDragPointerId); }catch{}
   }
   bgCropDragPointerId=null;
+  bgCropTouchPoints.clear();
+  bgCropPinchStartDist=0;
+  bgCropPinchStartZoom=100;
   bgCropImg=null;
   if(bgCropTempUrl){
     try{ URL.revokeObjectURL(bgCropTempUrl); }catch{}
@@ -5816,6 +5877,29 @@ if(bgCropCanvasEl){
   bgCropCanvasEl.addEventListener('pointerdown',(e)=>{
     if(e.pointerType==='mouse' && e.button!==0) return;
     if(!bgCropImg) return;
+    if(e.pointerType==='touch'){
+      bgCropTouchPoints.set(e.pointerId,{ x:e.clientX, y:e.clientY });
+      try{ bgCropCanvasEl.setPointerCapture(e.pointerId); }catch{}
+      if(bgCropTouchPoints.size>=2){
+        const pts=[...bgCropTouchPoints.values()];
+        const p1=pts[0],p2=pts[1];
+        const dist=Math.hypot((p2.x-p1.x),(p2.y-p1.y));
+        bgCropPinchStartDist=Math.max(1,dist);
+        bgCropPinchStartZoom=Number(bgCropZoomEl && bgCropZoomEl.value)||100;
+        if(bgCropDragPointerId!=null){
+          try{ bgCropCanvasEl.releasePointerCapture(bgCropDragPointerId); }catch{}
+        }
+        bgCropDragPointerId=null;
+      }else{
+        bgCropDragPointerId=e.pointerId;
+        bgCropDragStartX=e.clientX;
+        bgCropDragStartY=e.clientY;
+        bgCropDragStartOffX=bgCropOffsetX;
+        bgCropDragStartOffY=bgCropOffsetY;
+      }
+      e.preventDefault();
+      return;
+    }
     bgCropDragPointerId=e.pointerId;
     bgCropDragStartX=e.clientX;
     bgCropDragStartY=e.clientY;
@@ -5825,19 +5909,55 @@ if(bgCropCanvasEl){
     e.preventDefault();
   });
   bgCropCanvasEl.addEventListener('pointermove',(e)=>{
+    if(e.pointerType==='touch' && bgCropTouchPoints.has(e.pointerId)){
+      bgCropTouchPoints.set(e.pointerId,{ x:e.clientX, y:e.clientY });
+      if(bgCropTouchPoints.size>=2){
+        if(bgCropZoomEl && bgCropImg){
+          const pts=[...bgCropTouchPoints.values()];
+          const p1=pts[0],p2=pts[1];
+          const dist=Math.hypot((p2.x-p1.x),(p2.y-p1.y));
+          const ratio=(bgCropPinchStartDist>0) ? (dist/bgCropPinchStartDist) : 1;
+          const next=(bgCropPinchStartZoom||100)*ratio;
+          const rect=bgCropCanvasEl.getBoundingClientRect();
+          const s=(Number(stageUiScale)||1)||1;
+          const ax=(((p1.x+p2.x)/2)-rect.left)/s;
+          const ay=(((p1.y+p2.y)/2)-rect.top)/s;
+          setBgCropScaleFromZoom(next,ax,ay);
+        }
+        e.preventDefault();
+        return;
+      }
+    }
     if(bgCropDragPointerId==null || e.pointerId!==bgCropDragPointerId) return;
-    bgCropOffsetX=bgCropDragStartOffX+(e.clientX-bgCropDragStartX);
-    bgCropOffsetY=bgCropDragStartOffY+(e.clientY-bgCropDragStartY);
+    {
+      const s=(Number(stageUiScale)||1)||1;
+      bgCropOffsetX=bgCropDragStartOffX+((e.clientX-bgCropDragStartX)/s);
+      bgCropOffsetY=bgCropDragStartOffY+((e.clientY-bgCropDragStartY)/s);
+    }
     clampBgCropOffsets();
     renderBgCrop();
     e.preventDefault();
   });
   bgCropCanvasEl.addEventListener('pointerup',(e)=>{
+    if(e.pointerType==='touch'){
+      bgCropTouchPoints.delete(e.pointerId);
+      if(bgCropTouchPoints.size<2){
+        bgCropPinchStartDist=0;
+        bgCropPinchStartZoom=Number(bgCropZoomEl && bgCropZoomEl.value)||100;
+      }
+    }
     if(bgCropDragPointerId==null || e.pointerId!==bgCropDragPointerId) return;
     try{ bgCropCanvasEl.releasePointerCapture(e.pointerId); }catch{}
     bgCropDragPointerId=null;
   });
   bgCropCanvasEl.addEventListener('pointercancel',(e)=>{
+    if(e.pointerType==='touch'){
+      bgCropTouchPoints.delete(e.pointerId);
+      if(bgCropTouchPoints.size<2){
+        bgCropPinchStartDist=0;
+        bgCropPinchStartZoom=Number(bgCropZoomEl && bgCropZoomEl.value)||100;
+      }
+    }
     if(bgCropDragPointerId==null || e.pointerId!==bgCropDragPointerId) return;
     try{ bgCropCanvasEl.releasePointerCapture(e.pointerId); }catch{}
     bgCropDragPointerId=null;
@@ -5849,8 +5969,9 @@ if(bgCropCanvasEl){
     if(!delta) return;
     const next=Number(bgCropZoomEl.value||'100')+(delta>0?-6:6);
     const rect=bgCropCanvasEl.getBoundingClientRect();
-    const ax=(e.clientX-rect.left);
-    const ay=(e.clientY-rect.top);
+    const s=(Number(stageUiScale)||1)||1;
+    const ax=(e.clientX-rect.left)/s;
+    const ay=(e.clientY-rect.top)/s;
     setBgCropScaleFromZoom(next,ax,ay);
     e.preventDefault();
   },{ passive:false });
