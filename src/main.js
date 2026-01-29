@@ -400,6 +400,7 @@ const bgCropResetEl=document.getElementById('bgCropReset');
 const bgCropStageEl=document.getElementById('bgCropStage');
 const bgCropCanvasEl=document.getElementById('bgCropCanvas');
 const bgCropZoomEl=document.getElementById('bgCropZoom');
+const bgFollowCanvasZoomEl=document.getElementById('bgFollowCanvasZoom');
 const bgCropCtx=bgCropCanvasEl ? bgCropCanvasEl.getContext('2d') : null;
 const clearAllLayersWrapEl=document.getElementById('clearAllLayersWrap');
 const clearAllLayersEl=document.getElementById('clearAllLayers');
@@ -503,6 +504,13 @@ const layerDownEl=document.getElementById('layerDown');
 const layerMergeDownEl=document.getElementById('layerMergeDown');
 const layerListEl=document.getElementById('layerList');
 let customBgUrl='';
+const BG_FOLLOW_CANVAS_ZOOM_STORAGE_KEY='wpaint.bgFollowCanvasZoom.v1';
+let bgFollowCanvasZoom=false;
+{
+  let saved=null;
+  try{ saved=localStorage.getItem(BG_FOLLOW_CANVAS_ZOOM_STORAGE_KEY); }catch{}
+  if(saved==='1' || saved==='true') bgFollowCanvasZoom=true;
+}
 let bgCropTempUrl='';
 let bgCropImg=null;
 let bgCropStageW=0;
@@ -3746,6 +3754,10 @@ function applyCanvasViewTransform({ allowEmpty=false }={}){
   if(cropOverlayContentEl) cropOverlayContentEl.style.transform=t;
   if(selectOverlayContentEl) selectOverlayContentEl.style.transform=t;
   updateCheckerboardScale();
+  if(checkerboard){
+    const follow=Boolean(customBgUrl && bgFollowCanvasZoom);
+    checkerboard.style.transform=follow ? t : '';
+  }
 }
 function updateCheckerboardScale(){
   if(!checkerboard) return;
@@ -5248,6 +5260,7 @@ function applyBackground(){
     checkerboard.style.backgroundRepeat='repeat';
   }
   updateCheckerboardScale();
+  applyCanvasViewTransform({ allowEmpty:true });
   if(canvasBgEl){
     canvasBgEl.style.display=showBgLayer?'none':'block';
     canvasBgEl.style.background=bg1;
@@ -5873,6 +5886,21 @@ if(bgCropApplyEl) bgCropApplyEl.addEventListener('click',()=>{ void applyBgCrop(
 if(bgCropZoomEl) bgCropZoomEl.addEventListener('input',()=>{
   setBgCropScaleFromZoom(bgCropZoomEl.value);
 });
+function setBgFollowCanvasZoom(enabled){
+  bgFollowCanvasZoom=Boolean(enabled);
+  try{
+    localStorage.setItem(BG_FOLLOW_CANVAS_ZOOM_STORAGE_KEY,bgFollowCanvasZoom?'1':'0');
+  }catch{}
+  if(bgFollowCanvasZoomEl) bgFollowCanvasZoomEl.checked=bgFollowCanvasZoom;
+  applyBackground();
+  renderCurrent();
+}
+if(bgFollowCanvasZoomEl){
+  bgFollowCanvasZoomEl.checked=Boolean(bgFollowCanvasZoom);
+  bgFollowCanvasZoomEl.addEventListener('change',()=>{
+    setBgFollowCanvasZoom(bgFollowCanvasZoomEl.checked);
+  });
+}
 if(bgCropCanvasEl){
   bgCropCanvasEl.addEventListener('pointerdown',(e)=>{
     if(e.pointerType==='mouse' && e.button!==0) return;
