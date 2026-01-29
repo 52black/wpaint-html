@@ -1002,8 +1002,9 @@ const SOFT_LRG_BRUSHES=buildSoftLrgBrushes();
 function stampTool(frame,x,y,val,tool,deltaMag){
   const baseSize=toolSettings[tool]?.size ?? 1;
   if(tool==='blobby'){
-    const bump=Math.min(14,Math.round((deltaMag||0)*0.5));
-    const s=clampToolSize(baseSize+bump,tool);
+    const mag=Math.max(0,(deltaMag||0)-0.75);
+    const shrink=Math.min(14,Math.round(mag*1.8));
+    const s=clampToolSize(baseSize-shrink,tool);
     stamp(frame,x,y,val,s);
     return;
   }
@@ -1609,7 +1610,7 @@ function drawSegment(from,to,val){
   const maxAbs=baseJitter*toolJitterScale;
   const jitterActive=maxAbs>0;
   const baseSize=(toolSettings[currentTool]?.size ?? 1)|0;
-  const worstSize=(currentTool==='blobby') ? clampToolSize(baseSize+14,currentTool) : clampToolSize(baseSize,currentTool);
+  const worstSize=clampToolSize(baseSize,currentTool);
   const r=Math.floor(((currentTool==='blobby' || currentTool==='stippleTiny' || currentTool==='softLrg' || currentTool==='palette') ? worstSize : size)/2);
   const pad=(r+maxAbs+1)|0;
   const x0=clamp(Math.min(from.x,to.x)-pad,0,W|0);
