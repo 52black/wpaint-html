@@ -1,5 +1,6 @@
 export function createWigglyTheme(deps){
-  const WIGGLY_BUILD_ID='5';
+  const DEFAULT_WIGGLY_BUILD_ID='5';
+  let wigglyBuildId=DEFAULT_WIGGLY_BUILD_ID;
   const {
     containerEl,
     stageEl,
@@ -15,6 +16,7 @@ export function createWigglyTheme(deps){
     onRequestReturnAfterColor,
     onRequestReturnAfterCrop,
     onSetCanvasSize,
+    fitCanvasToViewport,
     onGetToolSize,
     onSetToolSize,
     onGetJitterOn,
@@ -91,6 +93,12 @@ export function createWigglyTheme(deps){
   let wigglyAssetsPromise=null;
   let wigglyDeckPromise=null;
   let wigglyCorePromise=null;
+  let customDeckText='';
+  let customAssets=null;
+  let customPatternsAssetIndex=0;
+  let customPatternsRaw='';
+  let customBuildId='';
+  let lastWigglyVariant='';
   const wigglyImageUrlCache=new Map();
   let wigglyPaletteCache=null;
   let wigglyPatternCache=null;
@@ -118,9 +126,36 @@ export function createWigglyTheme(deps){
     if(!el) return;
     el.dispatchEvent(new Event('change',{ bubbles:true }));
   }
+  function isCustomWigglyUiTheme(){
+    return document.body.getAttribute('data-ui-theme')==='wigglycustom';
+  }
+  function getActiveWigglyBuildId(){
+    if(isCustomWigglyUiTheme() && customDeckText) return customBuildId || 'custom';
+    return DEFAULT_WIGGLY_BUILD_ID;
+  }
+  function syncWigglyDeckSource(){
+    const variant=(isCustomWigglyUiTheme() && customDeckText) ? 'custom' : 'default';
+    const nextBuildId=getActiveWigglyBuildId();
+    if(variant===lastWigglyVariant && nextBuildId===wigglyBuildId) return;
+    lastWigglyVariant=variant;
+    wigglyBuildId=nextBuildId;
+    wigglyAssetsPromise=null;
+    wigglyDeckPromise=null;
+    wigglyPatternCache=null;
+    wigglyDimsRect=null;
+    wigglyCanvasSizeKey='';
+    wigglyImageUrlCache.clear();
+    wigglyAssetBrushCache.clear();
+    if(wigglyThemeEl){
+      wigglyThemeEl.dataset.ready='0';
+      wigglyThemeEl.dataset.buildId='';
+    }
+  }
   async function loadWigglyAssets(){
+  syncWigglyDeckSource();
   if(wigglyAssetsPromise) return wigglyAssetsPromise;
   wigglyAssetsPromise=(async ()=>{
+    if(isCustomWigglyUiTheme() && customAssets) return customAssets;
     try{
       const res=await fetch(WIGGLY_THEME_ASSETS_URL);
       if(!res.ok) return [];
@@ -133,9 +168,19 @@ export function createWigglyTheme(deps){
   return wigglyAssetsPromise;
 }
   async function loadWigglyPatterns(){
+  syncWigglyDeckSource();
   if(wigglyPatternCache) return wigglyPatternCache;
+  if(isCustomWigglyUiTheme() && customPatternsRaw && customPatternsRaw.startsWith('%%IMG')){
+    const decoded=decodeDeckImageString(customPatternsRaw);
+    if(!decoded || decoded.w<=0 || decoded.h<=0){
+      wigglyPatternCache={ pix:new Uint8Array(0), w:0, h:0 };
+      return wigglyPatternCache;
+    }
+    wigglyPatternCache={ pix:decoded.pix, w:decoded.w|0, h:decoded.h|0 };
+    return wigglyPatternCache;
+  }
   const assets=await loadWigglyAssets();
-  const raw=assets[0];
+  const raw=assets[customPatternsAssetIndex|0];
   if(typeof raw!=='string' || !raw.startsWith('%%IMG')){
     wigglyPatternCache={ pix:new Uint8Array(0), w:0, h:0 };
     return wigglyPatternCache;
@@ -149,8 +194,10 @@ export function createWigglyTheme(deps){
   return wigglyPatternCache;
 }
   async function loadWigglyDeckText(){
+  syncWigglyDeckSource();
   if(wigglyDeckPromise) return wigglyDeckPromise;
   wigglyDeckPromise=(async ()=>{
+    if(isCustomWigglyUiTheme() && customDeckText) return customDeckText;
     try{
       const res=await fetch(WIGGLY_THEME_DECK_URL);
       if(!res.ok) return '';
@@ -177,15 +224,22 @@ export function createWigglyTheme(deps){
   function parseDeckWidgetMap(deckText){
   const cardStart=deckText.indexOf('{card:main}');
   if(cardStart<0) return { bgIndex:null, widgets:[] };
-  const section=deckText.slice(cardStart);
-  const imgMatch=section.match(/image:\s*"\{(\d+)\}"/);
-  const bgIndex=imgMatch?Number(imgMatch[1]):null;
+  let cardEnd=deckText.indexOf('{card:',cardStart+1);
+  if(cardEnd<0) cardEnd=deckText.length;
+  const section=deckText.slice(cardStart,cardEnd);
+  const imgMatch=section.match(/image:\s*"([^"]+)"/);
+  const bgRaw=imgMatch ? String(imgMatch[1]||'') : '';
+  let bgIndex=null;
+  let bgImg='';
+  if(bgRaw){
+    const m=bgRaw.match(/^\{(\d+)\}$/);
+    if(m) bgIndex=Number(m[1]);
+    else if(bgRaw.startsWith('%%IMG')) bgImg=bgRaw;
+  }
   const widgets=[];
   const widgetsStart=section.indexOf('{widgets}');
-  console.log('[wiggly] parse', { cardStart, widgetsStart, len: deckText.length });
-  if(widgetsStart<0) return { bgIndex, widgets };
+  if(widgetsStart<0) return { bgIndex, bgImg, widgets };
   const widgetsText=section.slice(widgetsStart);
-  let debugCount=0;
   const headerEnd=widgetsText.indexOf('\n');
   const startIndex=headerEnd>=0 ? headerEnd+1 : 0;
   const nameRegex=/(^|\n)\s*([A-Za-z0-9_-]+)\s*:/g;
@@ -195,10 +249,6 @@ export function createWigglyTheme(deps){
   while((match=nameRegex.exec(widgetsText))){
     const name=match[2] || '';
     if(!name) continue;
-    if(debugCount<12){
-      console.log('[wiggly] widget name', name);
-      debugCount++;
-    }
     const colonIndex=match.index + match[0].lastIndexOf(':');
     const objInfo=extractJsonObjectAt(widgetsText,colonIndex+1);
     if(!objInfo) continue;
@@ -206,7 +256,7 @@ export function createWigglyTheme(deps){
     try{ data=JSON.parse(objInfo.json); }catch{ data=null; }
     if(data && Array.isArray(data.pos) && Array.isArray(data.size)){
       const type=String(data.type||'').trim() || 'widget';
-      const imageIndex=extractImageIndexFromWidget(data);
+      const imageInfo=extractImageSourceFromWidget(data);
       const interval=Array.isArray(data.interval) ? data.interval.map((n)=>Number(n)||0) : null;
       const valueNum=(typeof data.value==='number') ? Number(data.value) : null;
       widgets.push({
@@ -220,25 +270,34 @@ export function createWigglyTheme(deps){
         value:typeof data.value==='string'?data.value:'',
         interval,
         valueNum,
-        imageIndex,
+        imageIndex:imageInfo ? imageInfo.index : null,
+        imageRaw:imageInfo ? imageInfo.raw : '',
       });
     }
     nameRegex.lastIndex=objInfo.endIndex;
   }
-  return { bgIndex, widgets };
+  return { bgIndex, bgImg, widgets };
 }
-  function extractImageIndexFromWidget(data){
+  function extractImageSourceFromWidget(data){
   if(!data || typeof data!=='object') return null;
+  const pick=(img)=>{
+    const s=String(img||'');
+    if(!s) return null;
+    const m=s.match(/^\{(\d+)\}$/);
+    if(m) return { index:Number(m[1]), raw:'' };
+    if(s.startsWith('%%IMG')) return { index:null, raw:s };
+    return null;
+  };
   if(typeof data.image==='string'){
-    const m=data.image.match(/\{(\d+)\}/);
-    if(m) return Number(m[1]);
+    const got=pick(data.image);
+    if(got) return got;
   }
   if(data.widgets && typeof data.widgets==='object'){
     for(const key of Object.keys(data.widgets)){
       const child=data.widgets[key];
       if(child && typeof child==='object' && typeof child.image==='string'){
-        const m=child.image.match(/\{(\d+)\}/);
-        if(m) return Number(m[1]);
+        const got=pick(child.image);
+        if(got) return got;
       }
     }
   }
@@ -340,13 +399,20 @@ export function createWigglyTheme(deps){
   const paletteKey=palette.join('|');
   const cacheKey=`${placeholderIndex}|${patternReady?1:0}|${paletteReady?1:0}|${transparentZero?1:0}|${transparentPaletteIndex0?1:0}|${paletteKey}`;
   if(wigglyImageUrlCache.has(cacheKey)) return wigglyImageUrlCache.get(cacheKey);
-  const assets=await loadWigglyAssets();
-  const assetRaw=assets[placeholderIndex];
-  if(typeof assetRaw!=='string' || !assetRaw.startsWith('%%IMG')){
+  let raw='';
+  if(typeof placeholderIndex==='string' && placeholderIndex.startsWith('%%IMG')){
+    raw=placeholderIndex;
+  }else{
+    const idx=Number(placeholderIndex);
+    const assets=await loadWigglyAssets();
+    const assetRaw=assets[idx];
+    if(typeof assetRaw==='string' && assetRaw.startsWith('%%IMG')) raw=assetRaw;
+  }
+  if(!raw){
     wigglyImageUrlCache.set(cacheKey,'');
     return '';
   }
-  const url=decodeDeckImageToDataUrl(assetRaw,{ transparentZero, transparentPaletteIndex0 });
+  const url=decodeDeckImageToDataUrl(raw,{ transparentZero, transparentPaletteIndex0 });
   wigglyImageUrlCache.set(cacheKey,url);
   return url;
 }
@@ -357,9 +423,8 @@ export function createWigglyTheme(deps){
 
   async function getDeckAssetBrush(placeholderIndex,options){
     await loadWigglyPatterns();
-    const idxNum=Number(placeholderIndex)||0;
-    if(idxNum<0) return null;
-    const isMarkerShape=(idxNum>=MARKER_SHAPE_ASSET_FIRST && idxNum<=MARKER_SHAPE_ASSET_LAST);
+    const idxNum=(typeof placeholderIndex==='string') ? 0 : (Number(placeholderIndex)||0);
+    const isMarkerShape=(typeof placeholderIndex!=='string') && (idxNum>=MARKER_SHAPE_ASSET_FIRST && idxNum<=MARKER_SHAPE_ASSET_LAST);
     const transparentZero=(options && typeof options.transparentZero==='boolean')
       ? options.transparentZero
       : isMarkerShape;
@@ -367,11 +432,17 @@ export function createWigglyTheme(deps){
       ? options.transparentPaletteIndex0
       : isMarkerShape;
     const patternReady=Boolean(wigglyPatternCache && wigglyPatternCache.w===8 && wigglyPatternCache.pix && wigglyPatternCache.pix.length);
-    const cacheKey=`${idxNum}|${patternReady?1:0}|${transparentZero?1:0}|${transparentPaletteIndex0?1:0}`;
+    const cacheKey=`${typeof placeholderIndex==='string'?placeholderIndex:idxNum}|${patternReady?1:0}|${transparentZero?1:0}|${transparentPaletteIndex0?1:0}`;
     if(wigglyAssetBrushCache.has(cacheKey)) return wigglyAssetBrushCache.get(cacheKey) || null;
-    const assets=await loadWigglyAssets();
-    const raw=assets[idxNum];
-    if(typeof raw!=='string' || !raw.startsWith('%%IMG')){
+    let raw='';
+    if(typeof placeholderIndex==='string' && placeholderIndex.startsWith('%%IMG')){
+      raw=placeholderIndex;
+    }else{
+      const assets=await loadWigglyAssets();
+      const assetRaw=assets[idxNum];
+      if(typeof assetRaw==='string' && assetRaw.startsWith('%%IMG')) raw=assetRaw;
+    }
+    if(!raw){
       wigglyAssetBrushCache.set(cacheKey,null);
       return null;
     }
@@ -615,11 +686,9 @@ export function createWigglyTheme(deps){
         e.stopPropagation();
         const setter=window && window.setPaletteFromTheme;
         if(typeof setter==='function'){
-          console.log('[wiggly] click',widget.id,'->',`palette ${colorValue}`,'targetFound=',false);
           setter(colorValue);
         }else{
           const target=document.querySelector(`.palette-btn[data-value="${colorValue}"]`);
-          console.log('[wiggly] click',widget.id,'->',`palette ${colorValue}`,'targetFound=',Boolean(target));
           if(target && !target.disabled) target.click();
         }
       });
@@ -639,7 +708,6 @@ export function createWigglyTheme(deps){
       e.preventDefault();
       e.stopPropagation();
       const target=document.getElementById(targetId);
-      console.log('[wiggly] click',widget.id,'->',targetId,'targetFound=',Boolean(target),'disabled=',Boolean(target && target.disabled));
       const needsDefaultTheme=(widget.id==='button2' || widget.id==='button4');
       if(needsDefaultTheme){
         if(widget.id==='button4' && typeof onRequestReturnAfterColor==='function') onRequestReturnAfterColor();
@@ -754,9 +822,9 @@ export function createWigglyTheme(deps){
   const parsed=parseDeckWidgetMap(deckText);
   wigglyDimsRect=null;
   wigglyThemeEl.dataset.ready='1';
-  wigglyThemeEl.dataset.buildId=WIGGLY_BUILD_ID;
-  console.log('[wiggly] build widgets start');
-  let sawDims=false;
+  wigglyThemeEl.dataset.buildId=wigglyBuildId;
+  if(parsed && parsed.bgImg) wigglyThemeEl.dataset.bgImg=String(parsed.bgImg||'');
+  else if(wigglyThemeEl.dataset.bgImg) delete wigglyThemeEl.dataset.bgImg;
   for(const widget of parsed.widgets){
     if(widget.id==='dims'){
       wigglyDimsRect={
@@ -765,8 +833,6 @@ export function createWigglyTheme(deps){
         w:Number(widget.size[0])||0,
         h:Number(widget.size[1])||0,
       };
-      sawDims=true;
-      console.log('[wiggly] dims',wigglyDimsRect);
       continue;
     }
     if(ALWAYS_HIDE_NAMES.has(widget.id)) continue;
@@ -792,7 +858,11 @@ export function createWigglyTheme(deps){
       el.dataset.imgIndex=String(widget.imageIndex);
       el.classList.add('has-image');
     }
-    const isInvisibleButton=(widget.style==='invisible') || (widget.type==='button' && !widget.text && !widget.value && widget.imageIndex==null && widget.style!=='check');
+    if(widget.imageRaw && widget.id!=='markerSizes'){
+      el.dataset.imgRaw=String(widget.imageRaw||'');
+      el.classList.add('has-image');
+    }
+    const isInvisibleButton=(widget.style==='invisible') || (widget.type==='button' && !widget.text && !widget.value && widget.imageIndex==null && !widget.imageRaw && widget.style!=='check');
     if(isInvisibleButton) el.classList.add('is-invisible-btn');
     if(widget.id==='button5' && typeof onToggleAdvanced==='function'){
       markClickable(el);
@@ -903,7 +973,6 @@ export function createWigglyTheme(deps){
   }else{
     wigglyThemeEl.dataset.bgIndex='';
   }
-  console.log('[wiggly] build widgets done','count=',wigglyThemeEl.querySelectorAll('.wiggly-widget').length,'sawDims=',sawDims);
 }
   function syncWigglyThemeButtons(){
   if(!containerEl) return;
@@ -920,7 +989,6 @@ export function createWigglyTheme(deps){
     if(!isWigglyUiTheme()){
       captureCanvasViewportHomeStyle();
       restoreCanvasViewport();
-      console.log('[wiggly] canvas viewport reset');
       if(canvasViewportRestoreApplied){
         restoreCanvasViewportStyle();
         canvasViewportRestoreApplied=false;
@@ -938,11 +1006,8 @@ export function createWigglyTheme(deps){
       const nextKey=`${wigglyDimsRect.w}x${wigglyDimsRect.h}`;
       if(nextKey!==wigglyCanvasSizeKey){
         wigglyCanvasSizeKey=nextKey;
-        console.log('[wiggly] canvas size update',wigglyDimsRect,'parent=',canvasViewportEl.parentElement && canvasViewportEl.parentElement.className);
       }
       canvasViewportRestoreApplied=true;
-    }else{
-      console.log('[wiggly] canvas dims missing',wigglyDimsRect);
     }
   }
   function syncWigglyThemeAdvancedVisibility(){
@@ -993,16 +1058,19 @@ export function createWigglyTheme(deps){
   }
   async function applyWigglyThemeImages(){
   if(!wigglyThemeEl || !isWigglyUiTheme()) return;
-  console.log('[wiggly] apply images');
+  syncWigglyDeckSource();
   await ensureWigglyPalette();
   await loadWigglyPatterns();
-  if(wigglyThemeEl.dataset.ready!=='1' || wigglyThemeEl.dataset.buildId!==WIGGLY_BUILD_ID) await buildWigglyThemeWidgets();
+  if(wigglyThemeEl.dataset.ready!=='1' || wigglyThemeEl.dataset.buildId!==wigglyBuildId) await buildWigglyThemeWidgets();
   syncWigglyThemeButtons();
   syncWigglyThemeAdvancedVisibility();
   syncWigglyCanvasViewport();
+  if(typeof fitCanvasToViewport==='function') fitCanvasToViewport();
   const bgIndex=Number(wigglyThemeEl.dataset.bgIndex);
-  if(Number.isFinite(bgIndex)){
-    const bgUrl=await getWigglyImageUrl(bgIndex,{ transparentZero:false });
+  const bgRaw=String(wigglyThemeEl.dataset.bgImg||'');
+  const bgSrc=(bgRaw && bgRaw.startsWith('%%IMG')) ? bgRaw : (Number.isFinite(bgIndex)?bgIndex:null);
+  if(bgSrc!=null){
+    const bgUrl=await getWigglyImageUrl(bgSrc,{ transparentZero:false });
     if(bgUrl){
       wigglyThemeEl.style.removeProperty('background-image');
       if(stageEl) stageEl.style.backgroundImage=`url("${bgUrl}")`;
@@ -1011,15 +1079,17 @@ export function createWigglyTheme(deps){
       if(stageEl) stageEl.style.imageRendering='pixelated';
     }
   }
-  const nodes=[...containerEl.querySelectorAll('.wiggly-widget[data-img-index]')];
+  const nodes=[...containerEl.querySelectorAll('.wiggly-widget[data-img-index],.wiggly-widget[data-img-raw]')];
   for(const node of nodes){
     if(node && node.dataset && node.dataset.name==='markerSizes'){
       node.style.removeProperty('background-image');
       continue;
     }
-    const placeholder=Number(node.dataset.imgIndex);
-    if(!Number.isFinite(placeholder)) continue;
-    const url=await getWigglyImageUrl(placeholder,{ transparentZero:true });
+    const raw=String(node.dataset.imgRaw||'');
+    const idx=Number(node.dataset.imgIndex);
+    const src=(raw && raw.startsWith('%%IMG')) ? raw : (Number.isFinite(idx)?idx:null);
+    if(src==null) continue;
+    const url=await getWigglyImageUrl(src,{ transparentZero:true });
     if(!url) continue;
     node.style.backgroundImage=`url("${url}")`;
     node.style.imageRendering='pixelated';
@@ -1094,10 +1164,132 @@ export function createWigglyTheme(deps){
     return null;
   }
   function normalizeUiTheme(raw){
-    return raw==='wigglypaint'?'wigglypaint':(raw==='cat'?'cat':(raw==='cute'?'cute':''));
+    if(raw==='wigglypaint') return 'wigglypaint';
+    if(raw==='wigglycustom') return customDeckText ? 'wigglycustom' : 'wigglypaint';
+    if(raw==='cat') return 'cat';
+    if(raw==='cute') return 'cute';
+    return '';
   }
   function isWigglyUiTheme(){
-    return document.body.getAttribute('data-ui-theme')==='wigglypaint';
+    const t=document.body.getAttribute('data-ui-theme');
+    return t==='wigglypaint' || t==='wigglycustom';
+  }
+  function extractAssetsFromDeckText(deckText){
+    const text=String(deckText||'');
+    const tag='{assets}';
+    const start=text.indexOf(tag);
+    if(start<0) return null;
+    const sectionStart=start+tag.length;
+    let sectionEnd=text.length;
+    const after=text.slice(sectionStart);
+    const nextSectionMatch=after.match(/\r?\n\s*\{[A-Za-z]/);
+    if(nextSectionMatch && typeof nextSectionMatch.index==='number'){
+      sectionEnd=sectionStart+nextSectionMatch.index;
+    }
+    const section=text.slice(sectionStart,sectionEnd).trim();
+    if(!section) return null;
+    if(section[0]==='[' || section[0]==='{'){
+      try{
+        const parsed=JSON.parse(section);
+        const list=Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.assets) ? parsed.assets : null);
+        if(list && list.length){
+          const assets=list.map((v)=>typeof v==='string'?v:'');
+          return assets.length ? assets : null;
+        }
+      }catch{}
+    }
+    const lines=section.split(/\r?\n/);
+    const assets=[];
+    let nextSequentialIndex=0;
+    for(const line of lines){
+      const raw=String(line||'').trim();
+      if(!raw) continue;
+      let m=raw.match(/^\s*(\d+)\s*:\s*"(%%[^"]+)"/);
+      if(m){
+        const idx=Number(m[1])||0;
+        if(idx>=0){
+          assets[idx]=m[2] || '';
+          if(idx>=nextSequentialIndex) nextSequentialIndex=idx+1;
+        }
+        continue;
+      }
+      m=raw.match(/^\s*[A-Za-z0-9_]+\s*:\s*"(%%[^"]+)"/);
+      if(m){
+        assets[nextSequentialIndex++]=m[1] || '';
+        continue;
+      }
+      m=raw.match(/^\s*"(%%[^"]+)"/);
+      if(m){
+        assets[nextSequentialIndex++]=m[1] || '';
+        continue;
+      }
+    }
+    if(assets.length===0) return null;
+    for(let i=0;i<assets.length;i++){
+      if(typeof assets[i]!=='string') assets[i]='';
+    }
+    return assets;
+  }
+  function extractPatternsAssetIndexFromDeckText(deckText){
+    const text=String(deckText||'');
+    const m=text.match(/patterns\s*:\s*"\{(\d+)\}"/);
+    if(!m) return 0;
+    const n=Number(m[1])||0;
+    return n>=0 ? (n|0) : 0;
+  }
+  function extractPatternsRawFromDeckText(deckText){
+    const text=String(deckText||'');
+    const m=text.match(/patterns\s*:\s*"(%%IMG[^"]+)"/);
+    return m ? String(m[1]||'') : '';
+  }
+  function clearCustomTheme(){
+    customDeckText='';
+    customAssets=null;
+    customPatternsAssetIndex=0;
+    customPatternsRaw='';
+    customBuildId='';
+    wigglyAssetsPromise=null;
+    wigglyDeckPromise=null;
+    wigglyPatternCache=null;
+    wigglyDimsRect=null;
+    wigglyCanvasSizeKey='';
+    wigglyImageUrlCache.clear();
+    wigglyAssetBrushCache.clear();
+    lastWigglyVariant='';
+    wigglyBuildId=DEFAULT_WIGGLY_BUILD_ID;
+    if(wigglyThemeEl){
+      wigglyThemeEl.dataset.ready='0';
+      wigglyThemeEl.dataset.buildId='';
+    }
+  }
+  function setCustomThemeFromDeckText(deckText){
+    const text=String(deckText||'');
+    if(!text || text.indexOf('{card:main}')<0) return false;
+    const assets=extractAssetsFromDeckText(text);
+    customDeckText=text;
+    customAssets=assets && assets.length ? assets : null;
+    customPatternsAssetIndex=extractPatternsAssetIndexFromDeckText(text);
+    customPatternsRaw=extractPatternsRawFromDeckText(text);
+    customBuildId=`custom-${Date.now()}`;
+    wigglyAssetsPromise=null;
+    wigglyDeckPromise=null;
+    wigglyPatternCache=null;
+    wigglyDimsRect=null;
+    wigglyCanvasSizeKey='';
+    wigglyImageUrlCache.clear();
+    wigglyAssetBrushCache.clear();
+    lastWigglyVariant='';
+    if(wigglyThemeEl){
+      wigglyThemeEl.dataset.ready='0';
+      wigglyThemeEl.dataset.buildId='';
+    }
+    return true;
+  }
+  function hasCustomTheme(){
+    return Boolean(customDeckText);
+  }
+  function hasCustomAssets(){
+    return Boolean(customAssets && customAssets.length);
   }
   return {
     applyWigglyTheme,
@@ -1111,5 +1303,9 @@ export function createWigglyTheme(deps){
     getWigglyDimsSize,
     getDeckPatternBrush,
     getDeckAssetBrush,
+    setCustomThemeFromDeckText,
+    clearCustomTheme,
+    hasCustomTheme,
+    hasCustomAssets,
   };
 }

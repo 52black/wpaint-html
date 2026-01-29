@@ -354,6 +354,33 @@
     </div>
   </div>
 </div>
+<div id="deckImportModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="导入Deck文件">
+  <div class="modal-card">
+    <div class="modal-head">
+      <strong>导入Deck</strong>
+      <button id="deckImportClose" type="button" class="action-btn">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-field">
+        <span>导入内容</span>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <label class="toggle" style="justify-content:space-between;">
+            <span>绘画数据</span>
+            <input id="deckImportData" type="checkbox" checked>
+          </label>
+          <label class="toggle" style="justify-content:space-between;">
+            <span>主题</span>
+            <input id="deckImportTheme" type="checkbox">
+          </label>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="deckImportCancel" type="button" class="action-btn">取消</button>
+        <button id="deckImportApply" type="button" class="action-btn">导入</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="settingsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-label="设置">
   <div class="modal-card">
     <div class="modal-head">
@@ -385,6 +412,10 @@
             <label class="toggle" style="justify-content:space-between;">
               <span>WigglyPaint</span>
               <input id="uiThemeWiggly" name="uiTheme" type="radio" value="wigglypaint">
+            </label>
+            <label id="uiThemeWigglyCustomWrap" class="toggle" style="justify-content:space-between;display:none;">
+              <span>自定义主题</span>
+              <input id="uiThemeWigglyCustom" name="uiTheme" type="radio" value="wigglycustom">
             </label>
           </div>
         </div>

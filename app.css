@@ -6,40 +6,57 @@ body { margin: 0; background: #000; display: grid; place-items: center; overflow
 .stage .container { transform-origin: top left; }
 .container { width: 512px; height: 342px; position: relative; background: #fff; overflow: visible; }
 .wiggly-theme { position: absolute; inset: 0; z-index: 5; display: none; background-repeat: no-repeat; background-position: 0 0; background-size: 100% 100%; pointer-events: none; }
-body[data-ui-theme="wigglypaint"] .wiggly-theme { display: block; }
-body[data-ui-theme="wigglypaint"] .container { background: transparent; }
+body[data-ui-theme="wigglypaint"] .wiggly-theme,
+body[data-ui-theme="wigglycustom"] .wiggly-theme { display: block; }
+body[data-ui-theme="wigglypaint"] .container,
+body[data-ui-theme="wigglycustom"] .container { background: transparent; }
 .wiggly-widget { pointer-events: none; z-index: 6; }
 .wiggly-widget > span { pointer-events: none; }
 .wiggly-widget.has-image { pointer-events: none; }
 .wiggly-widget.check { pointer-events: none; }
 .wiggly-widget.wiggly-clickable { pointer-events: auto; }
-body:not([data-ui-theme="wigglypaint"]) .wiggly-widget { display: none; }
+body:not([data-ui-theme="wigglypaint"]):not([data-ui-theme="wigglycustom"]) .wiggly-widget { display: none; }
 body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="openAbout"],
+body[data-ui-theme="wigglycustom"] .container .wiggly-widget[data-name="openAbout"],
 body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="quickColorPicker"],
+body[data-ui-theme="wigglycustom"] .container .wiggly-widget[data-name="quickColorPicker"],
 body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="lang_btn"],
-body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="target"] { display: none !important; }
+body[data-ui-theme="wigglycustom"] .container .wiggly-widget[data-name="lang_btn"],
+body[data-ui-theme="wigglypaint"] .container .wiggly-widget[data-name="target"],
+body[data-ui-theme="wigglycustom"] .container .wiggly-widget[data-name="target"] { display: none !important; }
 .wiggly-widget { position: absolute; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; color: #111; border: 1px solid rgba(0,0,0,.25); background: rgba(255,255,255,.45); border-radius: 4px; overflow: hidden; transition: transform 140ms ease; }
 .wiggly-widget.has-image { background-color: transparent; border: none; background-repeat: no-repeat; background-position: center; background-size: contain; }
 body[data-ui-theme="wigglypaint"] .stage,
+body[data-ui-theme="wigglycustom"] .stage,
 body[data-ui-theme="wigglypaint"] .wiggly-widget.has-image,
-body[data-ui-theme="wigglypaint"] .wiggly-theme { image-rendering: crisp-edges; image-rendering: pixelated; }
+body[data-ui-theme="wigglycustom"] .wiggly-widget.has-image,
+body[data-ui-theme="wigglypaint"] .wiggly-theme,
+body[data-ui-theme="wigglycustom"] .wiggly-theme { image-rendering: crisp-edges; image-rendering: pixelated; }
 body[data-ui-theme="wigglypaint"]:not([data-canvas-smooth="1"]) .canvas,
-body[data-ui-theme="wigglypaint"]:not([data-canvas-smooth="1"]) .canvas-bg { image-rendering: crisp-edges; image-rendering: pixelated; }
+body[data-ui-theme="wigglycustom"]:not([data-canvas-smooth="1"]) .canvas,
+body[data-ui-theme="wigglypaint"]:not([data-canvas-smooth="1"]) .canvas-bg,
+body[data-ui-theme="wigglycustom"]:not([data-canvas-smooth="1"]) .canvas-bg { image-rendering: crisp-edges; image-rendering: pixelated; }
 body[data-ui-theme="wigglypaint"][data-canvas-smooth="1"] .canvas,
-body[data-ui-theme="wigglypaint"][data-canvas-smooth="1"] .canvas-bg { image-rendering: auto; }
-body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="button6"]{
+body[data-ui-theme="wigglycustom"][data-canvas-smooth="1"] .canvas,
+body[data-ui-theme="wigglypaint"][data-canvas-smooth="1"] .canvas-bg,
+body[data-ui-theme="wigglycustom"][data-canvas-smooth="1"] .canvas-bg { image-rendering: auto; }
+body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="button6"],
+body[data-ui-theme="wigglycustom"] .wiggly-widget[data-name="button6"]{
   background: rgba(17,17,17,.92);
   color: #fff;
   border: 1px solid rgba(255,255,255,.65);
   box-shadow: 0 6px 18px rgba(0,0,0,.35);
 }
-body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="button6"].wiggly-clickable:active{
+body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="button6"].wiggly-clickable:active,
+body[data-ui-theme="wigglycustom"] .wiggly-widget[data-name="button6"].wiggly-clickable:active{
   transform: translateY(1px);
 }
-body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="markerSizes"]{
+body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="markerSizes"],
+body[data-ui-theme="wigglycustom"] .wiggly-widget[data-name="markerSizes"]{
   background: transparent;
 }
-body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="markerSizes"] .wiggly-marker-cover{
+body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="markerSizes"] .wiggly-marker-cover,
+body[data-ui-theme="wigglycustom"] .wiggly-widget[data-name="markerSizes"] .wiggly-marker-cover{
   position: absolute;
   left: 25%;
   top: 20%;
@@ -49,7 +66,8 @@ body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="markerSizes"] .wiggl
   border-radius: 3px;
   pointer-events: none;
 }
-body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="markerSizes"] .wiggly-marker-shape{
+body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="markerSizes"] .wiggly-marker-shape,
+body[data-ui-theme="wigglycustom"] .wiggly-widget[data-name="markerSizes"] .wiggly-marker-shape{
   position: absolute;
   left: 25%;
   top: 20%;
@@ -76,16 +94,27 @@ body[data-ui-theme="wigglypaint"] .wiggly-widget[data-name="markerSizes"] .wiggl
 .wiggly-check { position: absolute; left: 4px; width: 10px; height: 10px; border: 1px solid rgba(0,0,0,.35); border-radius: 3px; background: rgba(255,255,255,.6); }
 .wiggly-widget.is-checked .wiggly-check { background: rgba(0,0,0,.78); border-color: rgba(0,0,0,.6); }
 body[data-ui-theme="wigglypaint"] .toolbar-left,
+body[data-ui-theme="wigglycustom"] .toolbar-left,
 body[data-ui-theme="wigglypaint"] .toolbar-right,
+body[data-ui-theme="wigglycustom"] .toolbar-right,
 body[data-ui-theme="wigglypaint"] .sidebar-footer,
+body[data-ui-theme="wigglycustom"] .sidebar-footer,
 body[data-ui-theme="wigglypaint"] .crop-panel,
+body[data-ui-theme="wigglycustom"] .crop-panel,
 body[data-ui-theme="wigglypaint"] .select-panel,
+body[data-ui-theme="wigglycustom"] .select-panel,
 body[data-ui-theme="wigglypaint"] .layer-panel,
+body[data-ui-theme="wigglycustom"] .layer-panel,
 body[data-ui-theme="wigglypaint"] .zoom-menu-wrap,
+body[data-ui-theme="wigglycustom"] .zoom-menu-wrap,
 body[data-ui-theme="wigglypaint"] .overlay,
+body[data-ui-theme="wigglycustom"] .overlay,
 body[data-ui-theme="wigglypaint"] .pattern-picker,
+body[data-ui-theme="wigglycustom"] .pattern-picker,
 body[data-ui-theme="wigglypaint"] .palette-panel,
-body[data-ui-theme="wigglypaint"] .jitter-panel { display: none !important; }
+body[data-ui-theme="wigglycustom"] .palette-panel,
+body[data-ui-theme="wigglypaint"] .jitter-panel,
+body[data-ui-theme="wigglycustom"] .jitter-panel { display: none !important; }
 .canvas-viewport { position: absolute; top: 0; left: 0; width: 360px; height: 340px; border: 1px solid #ccc; background: transparent; z-index: 2; overflow: hidden; touch-action: none; }
 .canvas-bg { position: absolute; top: 0; left: 0; width: 360px; height: 340px; z-index: 1; }
 .canvas { position: absolute; top: 0; left: 0; width: 360px; height: 340px; border: none; background: transparent; z-index: 2; touch-action: none; }

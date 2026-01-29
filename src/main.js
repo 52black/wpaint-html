@@ -363,8 +363,8 @@ let drawing=false;
 let drawingPointerId=null;
 let last=null;
 let cropController=null;
-let returnToWigglyAfterColor=false;
-let returnToWigglyAfterCrop=false;
+let returnToWigglyAfterColor='';
+let returnToWigglyAfterCrop='';
 let activeSchemeId='';
 function isCropMode(){
   return Boolean(cropController && cropController.isActive());
@@ -375,8 +375,9 @@ function openCrop(){
 function closeCrop(){
   if(cropController) cropController.close();
   if(returnToWigglyAfterCrop){
-    returnToWigglyAfterCrop=false;
-    setUiTheme('wigglypaint');
+    const next=returnToWigglyAfterCrop;
+    returnToWigglyAfterCrop='';
+    setUiTheme(next);
   }
 }
 const penBtn=document.getElementById('pen');
@@ -402,6 +403,12 @@ const bgCropCanvasEl=document.getElementById('bgCropCanvas');
 const bgCropZoomEl=document.getElementById('bgCropZoom');
 const bgFollowCanvasZoomEl=document.getElementById('bgFollowCanvasZoom');
 const bgCropCtx=bgCropCanvasEl ? bgCropCanvasEl.getContext('2d') : null;
+const deckImportModalEl=document.getElementById('deckImportModal');
+const deckImportCloseEl=document.getElementById('deckImportClose');
+const deckImportCancelEl=document.getElementById('deckImportCancel');
+const deckImportApplyEl=document.getElementById('deckImportApply');
+const deckImportDataEl=document.getElementById('deckImportData');
+const deckImportThemeEl=document.getElementById('deckImportTheme');
 const clearAllLayersWrapEl=document.getElementById('clearAllLayersWrap');
 const clearAllLayersEl=document.getElementById('clearAllLayers');
 const resizeGridEl=document.getElementById('resizeGrid');
@@ -3147,6 +3154,78 @@ window.addEventListener('keydown',(e)=>{
   if(e.key==='Escape' && resizeModalEl && resizeModalEl.classList.contains('is-open')) closeResizeModal();
 });
 
+let pendingDeckImportFile=null;
+function openDeckImportModal(file){
+  if(!deckImportModalEl) return false;
+  pendingDeckImportFile=file || null;
+  if(deckImportDataEl) deckImportDataEl.checked=true;
+  if(deckImportThemeEl) deckImportThemeEl.checked=false;
+  openModal(deckImportModalEl);
+  try{ if(deckImportApplyEl) deckImportApplyEl.focus(); }catch{}
+  return true;
+}
+function closeDeckImportModal(){
+  if(!deckImportModalEl) return;
+  pendingDeckImportFile=null;
+  if(wpaintFileEl) wpaintFileEl.value='';
+  playSound('cancel') || playSound('click');
+  closeModal(deckImportModalEl);
+}
+function finalizeAfterImport(){
+  if(jitterOnEl.checked){
+    displayFrame=0;
+    startAnim();
+  }else{
+    displayFrame=3;
+  }
+  renderCurrent();
+}
+async function applyDeckImportModal(){
+  const file=pendingDeckImportFile;
+  if(!file) return closeDeckImportModal();
+  const wantData=Boolean(deckImportDataEl && deckImportDataEl.checked);
+  const wantTheme=Boolean(deckImportThemeEl && deckImportThemeEl.checked);
+  if(!wantData && !wantTheme){
+    if(deckImportDataEl) deckImportDataEl.checked=true;
+    showTouchHint('至少选择一项');
+    return;
+  }
+  pendingDeckImportFile=null;
+  if(wpaintFileEl) wpaintFileEl.value='';
+  playSound('click');
+  closeModal(deckImportModalEl);
+  stopAnim();
+  try{
+    const deckText=await file.text();
+    if(wantData){
+      const count=await importDeckFromDeckText(deckText);
+      if(count>1){
+        displayFrame=3;
+        renderCurrent();
+        if(!wantTheme) return;
+      }
+    }
+    if(wantTheme){
+      const ok=await importDeckThemeFromDeckText(deckText);
+      if(!ok) showTouchHint('主题导入失败',{ sticky:true });
+      else showTouchHint('主题已导入');
+    }
+  }catch{}
+  finalizeAfterImport();
+}
+if(deckImportApplyEl) deckImportApplyEl.addEventListener('click',()=>{ void applyDeckImportModal(); });
+if(deckImportCancelEl) deckImportCancelEl.addEventListener('click',closeDeckImportModal);
+if(deckImportCloseEl) deckImportCloseEl.addEventListener('click',closeDeckImportModal);
+if(deckImportModalEl){
+  makeModalDraggable(deckImportModalEl);
+  deckImportModalEl.addEventListener('mousedown',(e)=>{
+    if(e.target===deckImportModalEl) closeDeckImportModal();
+  });
+}
+window.addEventListener('keydown',(e)=>{
+  if(e.key==='Escape' && deckImportModalEl && deckImportModalEl.classList.contains('is-open')) closeDeckImportModal();
+});
+
 // ===== GIF 导出（gifenc）=====
 function captureProjectConfig(){
   const schemeId=String(activeSchemeId||'');
@@ -3420,8 +3499,9 @@ document.getElementById('back').addEventListener('click',()=>{
   if(isWigglyUiTheme()) syncWigglyThemeButtons();
   applyPlaybackMode();
   if(returnToWigglyAfterColor){
-    returnToWigglyAfterColor=false;
-    setUiTheme('wigglypaint');
+    const next=returnToWigglyAfterColor;
+    returnToWigglyAfterColor='';
+    setUiTheme(next);
   }
 });
 document.querySelectorAll('#colorPage input[type=color]').forEach(input=>{
@@ -4061,6 +4141,8 @@ const uiThemeDefaultEl=document.getElementById('uiThemeDefault');
 const uiThemeCuteEl=document.getElementById('uiThemeCute');
 const uiThemeCatEl=document.getElementById('uiThemeCat');
 const uiThemeWigglyEl=document.getElementById('uiThemeWiggly');
+const uiThemeWigglyCustomEl=document.getElementById('uiThemeWigglyCustom');
+const uiThemeWigglyCustomWrapEl=document.getElementById('uiThemeWigglyCustomWrap');
 const wigglyThemeEl=document.getElementById('wigglyTheme');
 function setAdvancedMode(next){
   if(!containerEl || !advancedBtn) return;
@@ -4084,6 +4166,7 @@ const wigglyThemeApi=createWigglyTheme({
   wigglyThemeEl,
   canvasViewportEl,
   onSetCanvasSize: setCanvasSize,
+  fitCanvasToViewport,
   colorMap,
   BASE_COLOR_COUNT,
   decodeDeckImageString,
@@ -4091,10 +4174,23 @@ const wigglyThemeApi=createWigglyTheme({
   onToggleAdvanced: toggleAdvancedMode,
   onDisableAdvanced: ()=>setAdvancedMode(false),
   onSwitchToDefaultTheme: ()=>setUiTheme(''),
-  onRequestReturnAfterColor: ()=>{ returnToWigglyAfterColor=true; },
-  onRequestReturnAfterCrop: ()=>{ returnToWigglyAfterCrop=true; },
+  onRequestReturnAfterColor: ()=>{
+    const cur=document.body.getAttribute('data-ui-theme')||'';
+    returnToWigglyAfterColor=(cur==='wigglycustom') ? 'wigglycustom' : 'wigglypaint';
+  },
+  onRequestReturnAfterCrop: ()=>{
+    const cur=document.body.getAttribute('data-ui-theme')||'';
+    returnToWigglyAfterCrop=(cur==='wigglycustom') ? 'wigglycustom' : 'wigglypaint';
+  },
 });
-const { applyWigglyTheme, isWigglyUiTheme, normalizeUiTheme, syncWigglyActiveStates, syncWigglyThemeButtons, syncWigglyCanvasViewport, syncWigglyThemeAdvancedVisibility, getWigglyDimsSize }=wigglyThemeApi;
+const { applyWigglyTheme, isWigglyUiTheme, normalizeUiTheme, syncWigglyActiveStates, syncWigglyThemeButtons, syncWigglyCanvasViewport, syncWigglyThemeAdvancedVisibility, getWigglyDimsSize, hasCustomTheme }=wigglyThemeApi;
+function syncCustomThemeOptionVisibility(){
+  const has=typeof hasCustomTheme==='function' ? Boolean(hasCustomTheme()) : false;
+  if(uiThemeWigglyCustomWrapEl) uiThemeWigglyCustomWrapEl.style.display=has?'':'none';
+  if(uiThemeWigglyCustomEl) uiThemeWigglyCustomEl.disabled=!has;
+  const cur=document.body.getAttribute('data-ui-theme')||'';
+  if(!has && cur==='wigglycustom') setUiTheme('wigglypaint');
+}
 const SHORTCUTS_STORAGE_KEY='wpaint.shortcuts.v1';
 const NUMPAD_ENABLED_STORAGE_KEY='wpaint.numPadEnabled.v1';
 const CAT_SPRITE_CONFIG={
@@ -4374,15 +4470,19 @@ function syncPaletteButtonsYarnIcons(){
   }
 }
 function syncUiThemeRadios(){
+  const cur=document.body.getAttribute('data-ui-theme')||'';
   const isCute=isCuteUiTheme();
   const isCat=isCatUiTheme();
-  const isWiggly=isWigglyUiTheme();
-  if(uiThemeDefaultEl) uiThemeDefaultEl.checked=!isCute && !isCat && !isWiggly;
+  const isWigglyDefault=cur==='wigglypaint';
+  const isWigglyCustom=cur==='wigglycustom';
+  if(uiThemeDefaultEl) uiThemeDefaultEl.checked=!isCute && !isCat && !isWigglyDefault && !isWigglyCustom;
   if(uiThemeCuteEl) uiThemeCuteEl.checked=isCute;
   if(uiThemeCatEl) uiThemeCatEl.checked=isCat;
-  if(uiThemeWigglyEl) uiThemeWigglyEl.checked=isWiggly;
+  if(uiThemeWigglyEl) uiThemeWigglyEl.checked=isWigglyDefault;
+  if(uiThemeWigglyCustomEl) uiThemeWigglyCustomEl.checked=isWigglyCustom;
 }
 function setUiTheme(theme){
+  const prev=document.body.getAttribute('data-ui-theme')||'';
   const next=normalizeUiTheme(theme);
   if(next) document.body.setAttribute('data-ui-theme',next);
   else document.body.removeAttribute('data-ui-theme');
@@ -4391,7 +4491,7 @@ function setUiTheme(theme){
   syncPaletteButtonsYarnIcons();
   applyBackground();
   applyWigglyTheme();
-  if(next==='wigglypaint' && typeof syncWigglyActiveStates==='function'){
+  if((next==='wigglypaint' || next==='wigglycustom') && typeof syncWigglyActiveStates==='function'){
     syncWigglyActiveStates(currentTool,paletteValue);
   }
   if(next==='cat'){
@@ -4400,6 +4500,7 @@ function setUiTheme(theme){
   }else{
     clearCatPaws();
   }
+  if(prev!==next) fitCanvasToViewport();
   try{
     localStorage.setItem(UI_THEME_STORAGE_KEY,next);
   }catch{}
@@ -4410,6 +4511,7 @@ function setUiTheme(theme){
     saved=normalizeUiTheme(localStorage.getItem(UI_THEME_STORAGE_KEY));
   }catch{}
   if(saved) document.body.setAttribute('data-ui-theme',saved);
+  syncCustomThemeOptionVisibility();
   syncUiThemeRadios();
   applyCatSpriteIcons();
   syncPaletteButtonsYarnIcons();
@@ -4958,6 +5060,7 @@ function openSettings(){
   if(!settingsModalEl) return;
   syncSettingsShortcutsVisibility();
   setSettingsPage(settingsActivePage);
+  syncCustomThemeOptionVisibility();
   syncUiThemeRadios();
   openModal(settingsModalEl);
 }
@@ -4994,6 +5097,11 @@ if(uiThemeCatEl){
 if(uiThemeWigglyEl){
   uiThemeWigglyEl.addEventListener('change',()=>{
     if(uiThemeWigglyEl.checked) setUiTheme('wigglypaint');
+  });
+}
+if(uiThemeWigglyCustomEl){
+  uiThemeWigglyCustomEl.addEventListener('change',()=>{
+    if(uiThemeWigglyCustomEl.checked) setUiTheme('wigglycustom');
   });
 }
 function updateFileMenuPlacement(){
@@ -5154,8 +5262,9 @@ cropController=createCropController({
   applyPlaybackMode,
   onClose: ()=>{
     if(returnToWigglyAfterCrop){
-      returnToWigglyAfterCrop=false;
-      setUiTheme('wigglypaint');
+      const next=returnToWigglyAfterCrop;
+      returnToWigglyAfterCrop='';
+      setUiTheme(next);
     }
   },
 });
@@ -5569,8 +5678,36 @@ function extractDeckFrameStringsFromTargetJsonText(jsonText){
   return out.length>=3 ? out : null;
 }
 
-async function importDeckFromFile(file){
-  const deckText=await file.text();
+async function importDeckThemeFromDeckText(deckText){
+  setSoundsFromDeckText(deckText);
+  const deckPalette=extractDeckPalette16FromPatterns(deckText);
+  if(deckPalette){
+    const swappedPalette=deckPalette.slice();
+    const tmp=swappedPalette[1];
+    swappedPalette[1]=swappedPalette[15];
+    swappedPalette[15]=tmp;
+    activeSchemeId='';
+    setPalette16(swappedPalette);
+    syncOutlineColorMap();
+    applyBackground();
+    syncPaletteButtonsColors();
+    schemeBaseline=captureBaseline();
+    syncSchemeListActive();
+    renderCurrent();
+  }
+  if(!wigglyThemeApi || typeof wigglyThemeApi.setCustomThemeFromDeckText!=='function') return false;
+  const applied=wigglyThemeApi.setCustomThemeFromDeckText(deckText);
+  if(!applied) return false;
+  syncCustomThemeOptionVisibility();
+  if(typeof wigglyThemeApi.hasCustomAssets==='function' && !wigglyThemeApi.hasCustomAssets()){
+    if(/\{assets\}/.test(String(deckText||''))) showTouchHint('主题assets解析失败',{ sticky:true });
+    else if(/"\{\d+\}"/.test(String(deckText||''))) showTouchHint('主题不含assets，按钮可能仍为默认',{ sticky:true });
+  }
+  setUiTheme('wigglycustom');
+  return true;
+}
+
+async function importDeckFromDeckText(deckText){
   setSoundsFromDeckText(deckText);
   const deckPalette=extractDeckPalette16FromPatterns(deckText);
   if(deckPalette){
@@ -5675,6 +5812,11 @@ async function importDeckFromFile(file){
   },0);
   return timeline.length|0;
 }
+
+async function importDeckFromFile(file){
+  const deckText=await file.text();
+  return await importDeckFromDeckText(deckText);
+}
 importGifBtn.addEventListener('click',()=>{
   gifFileEl.value='';
   gifFileEl.click();
@@ -5713,23 +5855,12 @@ if(wpaintFileEl){
       stopAnim();
       const name=String(file.name||'').toLowerCase();
       if(name.endsWith('.deck')){
-        const count=await importDeckFromFile(file);
-        if(count>1){
-          displayFrame=3;
-          renderCurrent();
-          return;
-        }
+        if(openDeckImportModal(file)) return;
       }else{
         await loadWpaintProjectFromFile(file);
       }
     }catch{}
-    if(jitterOnEl.checked){
-      displayFrame=0;
-      startAnim();
-    }else{
-      displayFrame=3;
-    }
-    renderCurrent();
+    finalizeAfterImport();
   });
 }
 
