@@ -673,7 +673,12 @@ function getPaintValue(){
   if(currentTool==='softLrg') return 21;
   // paletteValue 支持 52~81 的 deck 别名；绘图数据仅存 0~21 的有效值
   // 当选择 deck 图案时，用“前景色”2 作为涂抹颜色，并由图案的掩码控制纹理
-  return (paletteValue>MAX_COLOR_INDEX) ? 2 : paletteValue;
+  let v=(paletteValue>MAX_COLOR_INDEX) ? 2 : paletteValue;
+  if(isWigglyUiTheme()){
+    if(v===2) v=16;
+    else if(v===16) v=2;
+  }
+  return v;
 }
 function getViewportClientRect(){
   const el=canvasViewportEl || canvas;

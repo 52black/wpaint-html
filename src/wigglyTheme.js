@@ -322,6 +322,11 @@ export function createWigglyTheme(deps){
   for(let i=1;i<=BASE_COLOR_COUNT;i++){
     palette.push(colorMap[i] ?? '#000000');
   }
+  if(palette.length>=16){
+    const tmp=palette[1];
+    palette[1]=palette[15];
+    palette[15]=tmp;
+  }
   return palette;
 }
   async function getWigglyImageUrl(placeholderIndex,options){
