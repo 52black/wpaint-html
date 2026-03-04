@@ -3541,11 +3541,11 @@ const schemeListEl=document.getElementById('schemeList');
 const schemeResetBtn=document.getElementById('schemeReset');
 const schemeSaveBtn=document.getElementById('schemeSave');
 const paletteSchemes=[
-  { id:'pico8', name:'PICO-8', colors:['#000000','#1d2b53','#7e2553','#008751','#ab5236','#5f574f','#c2c3c7','#fff1e8','#ff004d','#ffa300','#ffec27','#00e436','#29adff','#83769c','#ff77a8','#ffccaa'] },
-  { id:'sweetie16', name:'Sweetie 16', colors:['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179','#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'] },
-  { id:'endesga16', name:'Endesga 16', colors:['#e4a672','#b86f50','#743f39','#3f2832','#9e2835','#e53b44','#fb922b','#ffe762','#63c64d','#327345','#193d3f','#4f6781','#afbfd2','#ffffff','#2ce8f4','#0484d1'] },
-  { id:'db16', name:'DawnBringer 16', colors:['#140c1c','#442434','#30346d','#4e4a4e','#854c30','#346524','#d04648','#757161','#597dce','#d27d2c','#8595a1','#6daa2c','#d2aa99','#6dc2ca','#dad45e','#deeed6'] },
-  { id:'enos16', name:'ENOS16', colors:['#fafafa','#4b4b4b','#d4d4d4','#9d9d9d','#f9d381','#eaaf4d','#f9938a','#e75952','#9ad1f9','#58aeee','#8deda7','#44c55b','#c3a7e1','#9569c8','#bab5aa','#948e82'] },
+  { id:'pico8', name:'暖调工作室', colors:['#f7f5f2','#1f2328','#3b4048','#6c6f75','#a8abb0','#d6d3ce','#ffffff','#2e5aac','#5b8cff','#2aa7a1','#4caf7d','#e6c229','#e07a2f','#d64550','#7a4bc8','#c84b9b'] },
+  { id:'sweetie16', name:'糖果粉彩', colors:['#fff7fb','#2a2333','#503b5c','#7c6aa6','#c9c3d6','#ffffff','#ff8fb1','#ff6b6b','#ffb86b','#ffe66d','#a8ffb0','#3fd08b','#6debff','#7aa8ff','#3c66ff','#b07cff'] },
+  { id:'endesga16', name:'复古落日', colors:['#fff5e8','#2b1b1d','#55323a','#8c5a4d','#d9b08c','#ffffff','#ff4d6d','#ff7a00','#ffd166','#06d6a0','#1b9aaa','#3a86ff','#8338ec','#ff006e','#a7c957','#bde0fe'] },
+  { id:'db16', name:'林间薄雾', colors:['#f2f7f4','#1c2b24','#355044','#5d7a68','#9cb8a4','#dce8df','#ffffff','#2f6f5e','#3fbf8a','#8ad9b6','#2b59c3','#6d9bf1','#f2c14e','#e07a5f','#b56576','#7a5cfa'] },
+  { id:'enos16', name:'明亮默认', colors:['#fafafa','#232323','#4a4a4a','#8a8a8a','#d0d0d0','#ffffff','#e63946','#f4a261','#e9c46a','#2a9d8f','#55c1ff','#457bff','#6d4cff','#c77dff','#ff80b5','#b08968'] },
 ];
 const CUSTOM_SCHEMES_STORAGE_KEY='wpaint.paletteSchemes.v1';
 function normalizeScheme(raw){
